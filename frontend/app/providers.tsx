@@ -24,8 +24,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         },
         loginMethods: ["email", "wallet", "google"],
         appearance: {
-          theme: "light",
-          accentColor: "#171717",
+          theme: "dark",
+          accentColor: "#3D3B8E",
         },
       }}
     >

@@ -3,6 +3,31 @@
 import Script from "next/script";
 import { useEffect, useId, useRef } from "react";
 
+// Type definitions for Twitch Embed
+interface TwitchEmbedOptions {
+  width?: number | string;
+  height?: number | string;
+  channel?: string;
+  layout?: "video" | "video-with-chat";
+  parent?: string[];
+  autoplay?: boolean;
+  muted?: boolean;
+}
+
+interface TwitchEmbedInstance {
+  addEventListener(event: string, callback: () => void): void;
+  getPlayer(): { play(): void; pause(): void } | null;
+}
+
+interface TwitchEmbedConstructor {
+  new(elementId: string, options: TwitchEmbedOptions): TwitchEmbedInstance;
+  VIDEO_READY: string;
+}
+
+interface TwitchGlobal {
+  Embed: TwitchEmbedConstructor;
+}
+
 // Twitch requires SSL (HTTPS). For local dev use: npm run dev:https
 // https://dev.twitch.tv/docs/embed/ - "Domains that use Twitch embeds must use SSL certificates"
 function getEmbedParent(): string {
@@ -12,22 +37,29 @@ function getEmbedParent(): string {
   return host || "localhost";
 }
 
+// Helper to get Twitch from window
+function getTwitch(): TwitchGlobal | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { Twitch?: TwitchGlobal }).Twitch;
+}
+
 const EMBED_SCRIPT = "https://embed.twitch.tv/embed/v1.js";
 
 export default function TwitchEmbed({ channel }: { channel: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const embedRef = useRef<Twitch.Embed | null>(null);
+  const embedRef = useRef<TwitchEmbedInstance | null>(null);
   const embedId = useId().replace(/:/g, "") || "twitch-embed";
 
   useEffect(() => {
     if (!channel?.trim() || !containerRef.current) return;
 
     const initEmbed = () => {
-      if (typeof window === "undefined" || !window.Twitch?.Embed) return;
+      const twitch = getTwitch();
+      if (!twitch?.Embed) return;
       if (embedRef.current) return;
 
       const parent = getEmbedParent();
-      embedRef.current = new window.Twitch.Embed(embedId, {
+      embedRef.current = new twitch.Embed(embedId, {
         width: "100%",
         height: "100%",
         channel: channel.trim(),
@@ -38,13 +70,15 @@ export default function TwitchEmbed({ channel }: { channel: string }) {
       });
 
       const embed = embedRef.current;
-      embed.addEventListener(window.Twitch.Embed.VIDEO_READY, () => {
-        const player = embed.getPlayer();
-        if (player) player.play();
-      });
+      if (embed) {
+        embed.addEventListener(twitch.Embed.VIDEO_READY, () => {
+          const player = embed.getPlayer();
+          if (player) player.play();
+        });
+      }
     };
 
-    if (window.Twitch?.Embed) {
+    if (getTwitch()?.Embed) {
       initEmbed();
     } else {
       const onScriptLoad = () => initEmbed();

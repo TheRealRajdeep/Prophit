@@ -1,6 +1,8 @@
 import Header from "../../components/Header";
 import Sidebar from "../../components/Sidebar";
+import StreamerDetails from "../../components/StreamerDetails";
 import TwitchEmbed from "../../components/TwitchEmbed";
+import { getStreamInfo, type StreamInfo } from "@/lib/twitch";
 import type { Metadata } from "next";
 
 type Props = {
@@ -16,9 +18,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function fetchStreamInfo(channel: string): Promise<StreamInfo | null> {
+  try {
+    return await getStreamInfo(channel);
+  } catch (error) {
+    console.error("Error fetching stream info:", error);
+    return null;
+  }
+}
+
 export default async function StreamPage({ params }: Props) {
   const { streamer } = await params;
   const channel = decodeURIComponent(streamer);
+
+  // Fetch real Twitch data
+  const streamInfo = await fetchStreamInfo(channel);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-950 font-sans text-zinc-100">
@@ -47,38 +61,32 @@ export default async function StreamPage({ params }: Props) {
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </a>
-              <h1 className="text-lg font-bold text-white">
-                {channel}
-                <span className="ml-2 rounded bg-red-600 px-2 py-0.5 text-xs font-semibold uppercase text-white">
-                  Live
-                </span>
-              </h1>
             </div>
-            <div
-              className="w-full"
-              style={{
-                minHeight: 480,
-                height: "calc(100vh - 12rem)",
-              }}
-            >
-              <TwitchEmbed channel={channel} />
-            </div>
-            <p className="mt-3 text-sm text-zinc-500">
-              Twitch requires HTTPS. For local dev run <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">npm run dev:https</code> and open{" "}
-              <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">https://localhost:3000</code>. If the player fails,{" "}
-              <a
-                href={`https://www.twitch.tv/${encodeURIComponent(channel)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-[#9146FF] hover:underline"
+            <div className="w-full overflow-hidden rounded-lg border border-zinc-800">
+              <div
+                className="w-full overflow-hidden rounded-t-lg"
+                style={{
+                  minHeight: 480,
+                  height: "calc(100vh - 14rem)",
+                }}
               >
-                watch on Twitch
-              </a>
-              .
-            </p>
+                <TwitchEmbed channel={channel} />
+              </div>
+              <StreamerDetails
+                channel={streamInfo?.displayName || channel}
+                profileImageUrl={streamInfo?.profileImageUrl}
+                streamTitle={streamInfo?.streamTitle || `${channel} live stream`}
+                category={streamInfo?.category || "Just Chatting"}
+                language={streamInfo?.language || "EN"}
+                viewerCount={streamInfo?.viewerCount ?? "—"}
+                streamDuration="0:00"
+                verified={false}
+              />
+            </div>
           </div>
         </main>
       </div>
     </div>
   );
 }
+
