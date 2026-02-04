@@ -29,16 +29,12 @@ function isPrivyWalletLite(w: unknown): w is PrivyWalletLite {
 function getEmbeddedWalletsFromWallets(wallets: unknown[]): LinkedWallet[] {
   const w = (wallets || []).filter(isPrivyWalletLite);
   // Privy wallet objects are not identical to linkedAccounts; normalize to what we need.
-  const normalized: LinkedWallet[] = w
-    .map((x) => {
-      return {
-      type: "wallet",
-      address: x.address,
-      walletClientType: x.walletClientType,
-      walletIndex: x.walletIndex ?? x.hdWalletIndex ?? null,
-      } satisfies LinkedWallet;
-    })
-    .filter((x): x is LinkedWallet => Boolean(x));
+  const normalized: LinkedWallet[] = w.map((x) => ({
+    type: "wallet",
+    address: x.address,
+    walletClientType: x.walletClientType,
+    walletIndex: x.walletIndex ?? x.hdWalletIndex ?? null,
+  }));
 
   return normalized
     .filter(

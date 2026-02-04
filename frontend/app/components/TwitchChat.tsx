@@ -312,7 +312,8 @@ export default function TwitchChat({ channel, className = "" }: TwitchChatProps)
 
       clientRef.current = client;
 
-      client.on("message", (ch: string, tags: ChatTags, msg: string) => {
+      client.on("message", (...args: unknown[]) => {
+        const [ch, tags, msg] = args as [string, ChatTags, string];
         if (!mounted) return;
 
         const displayName = tags["display-name"] ?? tags.username ?? "?";
@@ -345,7 +346,7 @@ export default function TwitchChat({ channel, className = "" }: TwitchChatProps)
         }
       });
 
-      client.on("disconnected", (reason: string) => {
+      client.on("disconnected", (...args: unknown[]) => {
         if (mounted && status !== "error") setStatus("error");
       });
 
