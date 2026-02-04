@@ -49,6 +49,19 @@ export interface StreamInfo {
     startedAt: string | null;
 }
 
+/** Stream list item with thumbnail for homepage/sidebar */
+export interface LiveStreamItem {
+    id: string;
+    channelName: string;
+    displayName: string;
+    profileImageUrl: string | null;
+    streamTitle: string | null;
+    category: string | null;
+    viewerCount: number;
+    thumbnailUrl: string | null;
+    language: string | null;
+}
+
 // Cache the access token in memory
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -125,6 +138,41 @@ async function getStream(login: string): Promise<TwitchStream | null> {
         `/streams?user_login=${encodeURIComponent(login)}`
     );
     return data.data[0] || null;
+}
+
+/**
+ * Get top live streams from Twitch (for homepage/sidebar)
+ */
+export async function getLiveStreams(limit = 20): Promise<LiveStreamItem[]> {
+    const data = await twitchFetch<{ data: TwitchStream[] }>(
+        `/streams?first=${Math.min(Math.max(limit, 1), 100)}`
+    );
+
+    if (!data.data?.length) return [];
+
+    const userIds = data.data.map((s) => s.user_id).filter(Boolean);
+    const usersData = await twitchFetch<{ data: TwitchUser[] }>(
+        `/users?id=${userIds.map((id) => encodeURIComponent(id)).join("&id=")}`
+    );
+    const userMap = new Map(usersData.data.map((u) => [u.id, u]));
+
+    return data.data.map((stream) => {
+        const user = userMap.get(stream.user_id);
+        const thumbnailUrl = stream.thumbnail_url
+            ? stream.thumbnail_url.replace("{width}", "320").replace("{height}", "180")
+            : null;
+        return {
+            id: stream.id,
+            channelName: stream.user_login,
+            displayName: stream.user_name,
+            profileImageUrl: user?.profile_image_url ?? null,
+            streamTitle: stream.title || null,
+            category: stream.game_name || null,
+            viewerCount: stream.viewer_count ?? 0,
+            thumbnailUrl,
+            language: stream.language?.toUpperCase() || null,
+        };
+    });
 }
 
 /**

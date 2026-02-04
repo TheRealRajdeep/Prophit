@@ -51,7 +51,7 @@ function ViewersIcon() {
 
 function VerifiedBadge() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-purple-400" aria-hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-accent" aria-hidden>
       <path d="M22.5 12.5c0-1.58-.875-2.95-2.148-3.6.154-.435.238-.905.238-1.4 0-2.21-1.71-3.998-3.818-3.998-.47 0-.92.084-1.336.25C14.818 2.415 13.51 1.5 12 1.5s-2.816.917-3.437 2.25c-.415-.165-.866-.25-1.336-.25-2.11 0-3.818 1.79-3.818 4 0 .494.083.964.237 1.4-1.272.65-2.147 2.02-2.147 3.6 0 1.495.782 2.798 1.942 3.486-.02.17-.032.34-.032.514 0 2.21 1.708 4 3.818 4 .47 0 .92-.086 1.335-.25.62 1.334 1.926 2.25 3.437 2.25 1.512 0 2.818-.916 3.437-2.25.415.163.865.25 1.336.25 2.11 0 3.818-1.79 3.818-4 0-.174-.012-.344-.033-.513 1.158-.687 1.943-1.99 1.943-3.484z" />
     </svg>
   );
@@ -85,12 +85,12 @@ export default function StreamerDetails({
 
   return (
     <section
-      className="flex w-full flex-wrap items-start justify-between gap-4 rounded-b-lg border-t border-zinc-800 bg-zinc-900/80 px-4 py-3"
+      className="flex w-full flex-wrap items-start justify-between gap-4 rounded-b-lg border-t border-border-default bg-bg-surface/90 px-4 py-3"
       aria-label="Streamer details"
     >
       {/* Left: profile, LIVE badge, name, title, category • language */}
       <div className="flex min-w-0 flex-1 items-start gap-3">
-        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-zinc-700 ring-1 ring-zinc-600">
+        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-bg-elevated ring-1 ring-border-default">
           {profileImageUrl ? (
             <img
               src={profileImageUrl}
@@ -98,20 +98,20 @@ export default function StreamerDetails({
               className="h-full w-full object-cover"
             />
           ) : (
-            <span className="flex h-full w-full items-center justify-center text-sm font-semibold text-zinc-300">
+            <span className="flex h-full w-full items-center justify-center text-sm font-semibold text-text-muted">
               {displayName.charAt(0).toUpperCase()}
             </span>
           )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-red-600 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+            <span className="rounded bg-live px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white shadow-[0_0_8px_var(--live-badge-glow)]">
               Live
             </span>
             <span className="flex items-center gap-1.5 text-base font-semibold text-white">
               {displayName}
               {verified && (
-                <span className="text-purple-400" aria-label="Verified">
+                <span className="text-accent" aria-label="Verified">
                   <VerifiedBadge />
                 </span>
               )}
@@ -120,9 +120,9 @@ export default function StreamerDetails({
           <p className="mt-0.5 truncate text-sm text-zinc-300">
             {streamTitle}
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-accent-cyan/90">
             {category}
-            <span className="mx-1.5">•</span>
+            <span className="mx-1.5 text-text-muted">•</span>
             {language}
           </p>
         </div>
@@ -135,19 +135,19 @@ export default function StreamerDetails({
 
           <button
             type="button"
-            className="rounded bg-[#3D3B8E] hover:bg-[#5250a8] px-4 py-1.5 text-sm font-semibold text-white "
+            className="rounded bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-hover transition-colors"
           >
             Follow
           </button>
         </div>
-        <div className="flex items-center gap-3 text-sm text-zinc-400">
+        <div className="flex items-center gap-3 text-sm text-accent-warm">
           <span className="flex items-center gap-1.5">
             <ViewersIcon />
             <span>{viewers}</span>
           </span>
           <button
             type="button"
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
+            className="rounded p-1 text-text-muted hover:bg-bg-elevated hover:text-accent-cyan transition-colors"
             aria-label="More"
           >
             <EllipsisIcon />

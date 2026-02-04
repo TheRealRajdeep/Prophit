@@ -1,41 +1,87 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0c0a1d;
+  --foreground: #e4e4e7;
+  /* Dark theme palette */
+  --bg-base: #0c0a1d;
+  --bg-surface: #15122a;
+  --bg-elevated: #1c1835;
+  --bg-card: #1a1730;
+  --border-subtle: rgba(139, 92, 246, 0.15);
+  --border-default: rgba(139, 92, 246, 0.25);
+  --accent-primary: #8b5cf6;
+  --accent-primary-hover: #a78bfa;
+  --accent-secondary: #22d3ee;
+  --accent-secondary-muted: rgba(34, 211, 238, 0.2);
+  --accent-warm: #fbbf24;
+  --text-muted: #a1a1aa;
+  --text-subtle: #71717a;
+  --live-badge: #dc2626;
+  --live-badge-glow: rgba(220, 38, 38, 0.4);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-brand: #3D3B8E;
-  --color-brand-hover: #5250a8;
+  --color-brand: #6366f1;
+  --color-brand-hover: #818cf8;
+  /* Theme palette for Tailwind */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-card: var(--bg-card);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: var(--accent-primary-hover);
+  --color-accent-cyan: var(--accent-secondary);
+  --color-accent-cyan-muted: var(--accent-secondary-muted);
+  --color-accent-warm: var(--accent-warm);
+  --color-live: var(--live-badge);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-logo: "Bitcount Single", sans-serif;
+  --font-display: var(--font-plus-jakarta), var(--font-geist-sans), sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: var(--bg-base);
+    --foreground: var(--foreground);
   }
 }
 
 body {
-  background: var(--background);
+  background: var(--bg-base);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Subtle gradient overlay on main background */
+.bg-app {
+  background: linear-gradient(
+    165deg,
+    var(--bg-base) 0%,
+    #0f0d1f 40%,
+    #120f28 100%
+  );
 }
 
 .font-logo {
   font-family: "Bitcount Single", sans-serif;
 }
 
-/* Thin black scrollbars */
+.font-display {
+  font-family: var(--font-plus-jakarta), var(--font-geist-sans), sans-serif;
+}
+
+/* Themed scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3f3f46 #18181b;
+  scrollbar-color: var(--border-default) var(--bg-surface);
 }
 
 *::-webkit-scrollbar {
@@ -44,14 +90,14 @@ body {
 }
 
 *::-webkit-scrollbar-track {
-  background: #18181b;
+  background: var(--bg-surface);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--border-default);
   border-radius: 3px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--accent-primary);
 }

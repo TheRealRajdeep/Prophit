@@ -1,15 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { PlaceholderCover } from "./PlaceholderCover";
 
-// Placeholder type – replace with real channel type from backend
 export type ChannelCardData = {
   id: string;
   title: string;
   channelName: string;
   game: string;
-  emoji: string;
-  viewers: string;
+  emoji?: string;
+  viewers: string | number;
+  thumbnailUrl?: string | null;
+  profileImageUrl?: string | null;
 };
 
 type Props = {
@@ -25,32 +27,65 @@ function EyeIcon() {
   );
 }
 
+function formatViewers(v: string | number): string {
+  if (typeof v === "number") {
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+    return String(v);
+  }
+  return v;
+}
+
 export function ChannelCard({ channel }: Props) {
+  const href = `/stream/${encodeURIComponent(channel.channelName)}`;
+  const viewerText = formatViewers(channel.viewers);
+
   return (
-    <article className="group cursor-pointer">
-      <div className="relative overflow-hidden rounded-lg">
-        {/* Placeholder cover – no mock image; replace with real thumbnail from backend */}
-        <PlaceholderCover aspect="video" className="rounded-lg" />
-        <span className="absolute left-2 top-2 rounded bg-red-600 px-1.5 py-0.5 text-xs font-semibold uppercase text-white">
-          Live
-        </span>
-        <div className="absolute right-2 top-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs text-white">
-          <EyeIcon />
-          <span>{channel.viewers} viewers</span>
+    <article className="group cursor-pointer rounded-xl ring-1 ring-border-subtle transition-all hover:ring-accent/40 hover:bg-bg-card/50">
+      <Link href={href} className="block">
+        <div className="relative overflow-hidden rounded-lg">
+          {channel.thumbnailUrl ? (
+            <img
+              src={channel.thumbnailUrl}
+              alt=""
+              className="aspect-video w-full rounded-lg object-cover transition group-hover:scale-[1.02]"
+            />
+          ) : (
+            <PlaceholderCover aspect="video" className="rounded-lg" />
+          )}
+          <span className="absolute left-2 top-2 rounded bg-live px-1.5 py-0.5 text-xs font-semibold uppercase text-white shadow-[0_0_8px_var(--live-badge-glow)]">
+            Live
+          </span>
+          <div className="absolute right-2 top-2 flex items-center gap-1 rounded bg-bg-base/90 px-2 py-1 text-xs text-accent-cyan ring-1 ring-border-subtle">
+            <EyeIcon />
+            <span>{viewerText} viewers</span>
+          </div>
         </div>
-      </div>
+      </Link>
       <div className="mt-2 flex items-start gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-zinc-800 text-sm" aria-hidden>
-          {channel.emoji}
-        </span>
+        <Link href={href} className="shrink-0">
+          {channel.profileImageUrl ? (
+            <img
+              src={channel.profileImageUrl}
+              alt=""
+              className="h-8 w-8 rounded-full object-cover ring-1 ring-border-subtle"
+            />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-bg-elevated text-sm ring-1 ring-border-subtle" aria-hidden>
+              {channel.emoji ?? "🎮"}
+            </span>
+          )}
+        </Link>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-white group-hover:text-[#5250a8]">
-            {channel.title}
-          </h3>
-          <p className="truncate text-xs text-zinc-500">{channel.channelName}</p>
-          <p className="truncate text-xs text-zinc-500">{channel.game}</p>
+          <Link href={href}>
+            <h3 className="truncate text-sm font-semibold text-white group-hover:text-accent-hover transition-colors">
+              {channel.title || channel.channelName}
+            </h3>
+          </Link>
+          <p className="truncate text-xs text-text-muted">{channel.channelName}</p>
+          <p className="truncate text-xs text-accent-cyan/80">{channel.game || "—"}</p>
         </div>
-        <button type="button" className="shrink-0 rounded p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-white" aria-label="More options">
+        <button type="button" className="shrink-0 rounded p-1.5 text-text-muted hover:bg-bg-elevated hover:text-accent-cyan transition-colors" aria-label="More options">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
             <circle cx="12" cy="6" r="1.5" />
             <circle cx="12" cy="12" r="1.5" />

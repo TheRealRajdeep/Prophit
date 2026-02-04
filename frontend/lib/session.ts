@@ -11,4 +11,3 @@ export const generateSessionKey = (): SessionKey => {
     const account = privateKeyToAccount(privateKey);
     return { privateKey, address: account.address };
 };
-
