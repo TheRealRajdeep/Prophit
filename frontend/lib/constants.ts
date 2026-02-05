@@ -1,24 +1,25 @@
 import { base, baseSepolia, sepolia } from "viem/chains";
 import type { Chain } from "viem";
 
+/** CDN for network and token icons (Fun.xyz SDK). */
+export const CHAIN_TOKEN_ICON_CDN = "https://sdk-cdn.fun.xyz/images";
+
 export const BASE_CHAIN = base;
 export const BASE_CHAIN_ID = base.id;
 
 export const USDC_TOKEN_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as const;
 export const USDC_DECIMALS = 6;
 
-/** USDC contract addresses per chain for balance display (mainnet + testnets). */
+/** USDC contract addresses per chain for balance display (testnets only). */
 export const USDC_BY_CHAIN: { chainId: number; address: `0x${string}` }[] = [
-  { chainId: base.id, address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}` },
   { chainId: baseSepolia.id, address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}` },
   { chainId: sepolia.id, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}` },
 ];
 
-/** Chains supported in the Transfer Crypto flow (mainnet + testnets). */
-export const TRANSFER_CHAINS: { id: string; name: string; chain: Chain }[] = [
-  { id: "base", name: "Base", chain: base },
-  { id: "base-sepolia", name: "Base Sepolia", chain: baseSepolia },
-  { id: "sepolia", name: "Sepolia", chain: sepolia },
+/** Chains supported in the Transfer Crypto flow (testnets only). */
+export const TRANSFER_CHAINS: { id: string; name: string; chain: Chain; iconUrl: string }[] = [
+  { id: "base-sepolia", name: "Base Sepolia", chain: baseSepolia, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/base.svg` },
+  { id: "sepolia", name: "Ethereum Sepolia", chain: sepolia, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/ethereum.svg` },
 ];
 
 /** Token metadata for transfer UI. */
@@ -30,11 +31,12 @@ export const TRANSFER_TOKENS: {
   name: string;
   decimals: number;
   isNative: boolean;
+  iconUrl: string;
 }[] = [
-  { id: "eth", symbol: "ETH", name: "Ethereum", decimals: 18, isNative: true },
-  { id: "weth", symbol: "WETH", name: "Wrapped Ether", decimals: 18, isNative: false },
-  { id: "usdc", symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false },
-  { id: "usdt", symbol: "USDT", name: "Tether USD", decimals: 6, isNative: false },
+  { id: "eth", symbol: "ETH", name: "Ethereum", decimals: 18, isNative: true, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/ethereum.svg` },
+  { id: "weth", symbol: "WETH", name: "Wrapped Ether", decimals: 18, isNative: false, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/ethereum.svg` },
+  { id: "usdc", symbol: "USDC", name: "USD Coin", decimals: 6, isNative: false, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/usdc.svg` },
+  { id: "usdt", symbol: "USDT", name: "Tether USD", decimals: 6, isNative: false, iconUrl: `${CHAIN_TOKEN_ICON_CDN}/usdt.svg` },
 ];
 
 /**
@@ -46,12 +48,6 @@ export const TOKEN_ADDRESS_BY_CHAIN: Record<
   number,
   Partial<Record<TransferTokenId, `0x${string}` | null>>
 > = {
-  [base.id]: {
-    eth: null,
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`,
-    usdt: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`,
-    weth: "0x4200000000000000000000000000000000000006" as `0x${string}`,
-  },
   [baseSepolia.id]: {
     eth: null,
     usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`,

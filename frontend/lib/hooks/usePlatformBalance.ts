@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPublicClient, formatUnits, http } from "viem";
-import { base, baseSepolia, sepolia } from "viem/chains";
+import { baseSepolia, sepolia } from "viem/chains";
 import { USDC_DECIMALS, USDC_BY_CHAIN } from "@/lib/constants";
 import { usePlatformWallet } from "./usePlatformWallet";
 
@@ -17,7 +17,6 @@ const balanceOfAbi = [
 ] as const;
 
 const clients = {
-  [base.id]: createPublicClient({ chain: base, transport: http() }),
   [baseSepolia.id]: createPublicClient({ chain: baseSepolia, transport: http() }),
   [sepolia.id]: createPublicClient({ chain: sepolia, transport: http() }),
 };

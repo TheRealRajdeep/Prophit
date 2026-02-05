@@ -13,3 +13,13 @@ export const users = pgTable("users", {
   isStreamer: boolean("is_streamer").notNull().default(false),
   moderatorsFor: text("moderators_for").array().notNull().default([]),
 });
+
+/**
+ * Followed channels per user.
+ * - ens_domain: the user's ENS domain (who is following).
+ * - followed_streamers: list of channel/streamer identifiers this user follows.
+ */
+export const followedChannels = pgTable("followed_channels", {
+  ensDomain: text("ens_domain").primaryKey(),
+  followedStreamers: text("followed_streamers").array().notNull().default([]),
+});
