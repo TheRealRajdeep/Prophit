@@ -14,10 +14,10 @@ type StreamWithPredictionsProps = {
   streamInfo: {
     displayName?: string;
     profileImageUrl?: string | null;
-    streamTitle?: string;
-    category?: string;
-    language?: string;
-    viewerCount?: string;
+    streamTitle?: string | null;
+    category?: string | null;
+    language?: string | null;
+    viewerCount?: string | number | null;
     streamDuration?: string;
     verified?: boolean;
   } | null;
@@ -99,7 +99,7 @@ export default function StreamWithPredictions({
     if (!provider) return null;
     const address = (w as { address: string }).address as Address;
     return createWalletClient({
-      transport: custom(provider as import("viem").CustomTransport),
+      transport: custom(provider as { request(...args: unknown[]): Promise<unknown> }),
       chain: baseSepolia,
       account: address,
     });

@@ -148,11 +148,15 @@ export function usePredictions(
       if (!walletClient?.account) {
         throw new Error("Connect a wallet to perform this action");
       }
+      type WriteArgs =
+        | readonly [bigint]
+        | readonly [Address, string, string, string]
+        | readonly [bigint, number];
       const hash = await walletClient.writeContract({
         address: PREDICTION_FACTORY_ADDRESS,
         abi: PREDICTION_FACTORY_ABI,
         functionName: fn,
-        args: args as never[],
+        args: args as unknown as WriteArgs,
         chain: baseSepolia,
         account: walletClient.account,
       });

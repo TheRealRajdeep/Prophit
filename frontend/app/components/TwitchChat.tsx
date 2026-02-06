@@ -771,9 +771,9 @@ export default function TwitchChat({
                   key={p.id}
                   prediction={p}
                   canManage={canManagePredictions}
-                  onLock={lockPrediction}
-                  onResolve={resolvePrediction}
-                  onReject={cancelPrediction}
+                  onLock={async (id) => { await lockPrediction(id); }}
+                  onResolve={async (id, option) => { await resolvePrediction(id, option); }}
+                  onReject={async (id) => { await cancelPrediction(id); }}
                 />
               ))
             )
