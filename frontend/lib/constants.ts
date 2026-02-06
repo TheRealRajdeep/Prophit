@@ -7,6 +7,13 @@ export const CHAIN_TOKEN_ICON_CDN = "https://sdk-cdn.fun.xyz/images";
 export const BASE_CHAIN = base;
 export const BASE_CHAIN_ID = base.id;
 
+/** Base Sepolia – prediction contract is deployed here. */
+export const BASE_SEPOLIA_CHAIN_ID = 84532;
+
+/** PredictionFactory contract on Base Sepolia. */
+export const PREDICTION_FACTORY_ADDRESS =
+  "0x7633F422eED717C113B53C17FE3f2Bd9490ca475" as const;
+
 export const USDC_TOKEN_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as const;
 export const USDC_DECIMALS = 6;
 

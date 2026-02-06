@@ -1,7 +1,7 @@
 import Header from "../../components/Header";
 import Sidebar from "../../components/Sidebar";
 import StreamerDetails from "../../components/StreamerDetails";
-import TwitchChat from "../../components/TwitchChat";
+import StreamWithPredictions from "../../components/StreamWithPredictions";
 import TwitchEmbed from "../../components/TwitchEmbed";
 import { getStreamInfo, type StreamInfo } from "@/lib/twitch";
 import type { Metadata } from "next";
@@ -86,9 +86,9 @@ export default async function StreamPage({ params }: Props) {
                   verified={false}
                 />
               </div>
-              {/* Chat - custom styled, Twitch content only */}
+              {/* Chat - custom styled, Twitch content only; predictions for streamer/moderator */}
               <aside className="hidden w-[380px] shrink-0 lg:block" aria-label="Chat">
-                <TwitchChat channel={channel} className="h-full" />
+                <StreamWithPredictions channel={channel} className="h-full" streamInfo={streamInfo} />
               </aside>
             </div>
           </div>

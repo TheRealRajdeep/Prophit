@@ -13,3 +13,8 @@ export function apiUserUrl(address?: string): string {
   if (address) return `${base}/api/user?address=${encodeURIComponent(address)}`;
   return `${base}/api/user`;
 }
+
+export function apiStreamerUrl(channel: string): string {
+  const base = getApiUrl().replace(/\/$/, "");
+  return `${base}/api/streamer?channel=${encodeURIComponent(channel)}`;
+}

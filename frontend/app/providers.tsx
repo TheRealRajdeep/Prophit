@@ -1,5 +1,6 @@
 "use client";
 
+import { baseSepolia } from "viem/chains";
 import { EnsUsernameGate } from "@/app/components/EnsUsernameGate";
 import { PrivyProvider, useCreateWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { useEffect, useRef } from "react";
@@ -62,6 +63,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       appId={appId ?? ""}
       clientId={clientId ?? ""}
       config={{
+        defaultChain: baseSepolia,
+        supportedChains: [baseSepolia],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",

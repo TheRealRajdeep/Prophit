@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Address } from "viem";
+import {
+  usePredictions,
+  predictionStatusLabel,
+  isLive,
+  canLock,
+  canResolve,
+  canCancel,
+  type Prediction,
+} from "@/lib/hooks";
 
 // tmi.js types for message handler
 interface ChatTags {
@@ -42,6 +52,12 @@ function hashColor(username: string): string {
 type TwitchChatProps = {
   channel: string;
   className?: string;
+  /** When set, predictions are loaded from contract for this streamer. */
+  streamerAddress?: Address | null;
+  /** Show create prediction form and resolve/reject for live predictions. */
+  canManagePredictions?: boolean;
+  /** For sending create/lock/resolve/cancel tx. */
+  getWalletClient?: () => Promise<import("viem").WalletClient | null>;
 };
 
 // Outcome option for expanded prediction (left/right)
@@ -143,6 +159,244 @@ function VolumeIcon({ className = "h-4 w-4" }: { className?: string }) {
       <path d="M11 5L6 9H2v6h4l5 4V5Z" />
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
+  );
+}
+
+function formatEth(wei: bigint): string {
+  const eth = Number(wei) / 1e18;
+  if (eth >= 1e6) return `${(eth / 1e6).toFixed(1)}M`;
+  if (eth >= 1e3) return `${(eth / 1e3).toFixed(1)}k`;
+  return eth.toFixed(2);
+}
+
+/** Create prediction form for streamer/moderator. */
+function CreatePredictionForm({
+  streamerAddress,
+  onSubmit,
+  disabled,
+}: {
+  streamerAddress: Address;
+  onSubmit: (title: string, option1: string, option2: string) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [option1, setOption1] = useState("");
+  const [option2, setOption2] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = title.trim();
+    const o1 = option1.trim();
+    const o2 = option2.trim();
+    if (!t || !o1 || !o2) {
+      setError("Title and both options are required.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit(t, o1, o2);
+      setTitle("");
+      setOption1("");
+      setOption2("");
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transaction failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        className="w-full rounded-lg border border-dashed border-zinc-600 bg-zinc-800/50 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-brand hover:bg-zinc-800 hover:text-white disabled:opacity-50"
+      >
+        + Create prediction
+      </button>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3 space-y-3"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-white">New prediction</span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-zinc-400 hover:text-zinc-300"
+        >
+          Cancel
+        </button>
+      </div>
+      <input
+        type="text"
+        placeholder="Prediction question"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="w-full rounded border border-zinc-600 bg-zinc-900 px-2.5 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+      />
+      <input
+        type="text"
+        placeholder="Option 1"
+        value={option1}
+        onChange={(e) => setOption1(e.target.value)}
+        className="w-full rounded border border-zinc-600 bg-zinc-900 px-2.5 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+      />
+      <input
+        type="text"
+        placeholder="Option 2"
+        value={option2}
+        onChange={(e) => setOption2(e.target.value)}
+        className="w-full rounded border border-zinc-600 bg-zinc-900 px-2.5 py-1.5 text-sm text-white placeholder-zinc-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+      />
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <button
+        type="submit"
+        disabled={submitting}
+        className="w-full rounded-lg bg-brand py-2 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50"
+      >
+        {submitting ? "Creating…" : "Create prediction"}
+      </button>
+    </form>
+  );
+}
+
+/** Single prediction from contract with optional lock/resolve/reject for managers. */
+function RealPredictionCard({
+  prediction,
+  canManage,
+  onLock,
+  onResolve,
+  onReject,
+}: {
+  prediction: Prediction;
+  canManage: boolean;
+  onLock: (id: number) => Promise<void>;
+  onResolve: (id: number, option: 1 | 2) => Promise<void>;
+  onReject: (id: number) => Promise<void>;
+}) {
+  const [locking, setLocking] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const total = Number(prediction.totalBetOption1 + prediction.totalBetOption2);
+  const o1 = Number(prediction.totalBetOption1);
+  const o2 = Number(prediction.totalBetOption2);
+  const pct1 = total > 0 ? (o1 / total) * 100 : 50;
+  const pct2 = total > 0 ? (o2 / total) * 100 : 50;
+  const live = isLive(prediction.status);
+  const showLock = canManage && canLock(prediction.status);
+  const showResolve = canManage && canResolve(prediction.status);
+  const showReject = canManage && canCancel(prediction.status);
+
+  const handleResolve = async (option: 1 | 2) => {
+    setResolving(true);
+    try {
+      await onResolve(prediction.id, option);
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handleLock = async () => {
+    setLocking(true);
+    try {
+      await onLock(prediction.id);
+    } finally {
+      setLocking(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!confirm("Cancel this prediction and refund all bets?")) return;
+    setRejecting(true);
+    try {
+      await onReject(prediction.id);
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3">
+      <p className="text-sm font-semibold tracking-tight text-white">{prediction.title}</p>
+      <p className="mt-0.5 text-xs font-medium text-zinc-400">
+        {prediction.option1} vs {prediction.option2}
+        <span className="ml-1.5 rounded bg-zinc-700 px-1 text-[10px] text-zinc-300">
+          {predictionStatusLabel(prediction.status)}
+        </span>
+      </p>
+      <div className="mt-3 flex w-full items-stretch gap-0 overflow-hidden rounded-md border-4 border-black bg-zinc-800 shadow-[2px_2px_0_0_rgba(0,0,0,1)]">
+        <div
+          className="h-8 min-w-[4px] border-r-2 border-black bg-blue-500"
+          style={{ flex: pct1 || 0.001 }}
+          title={`${prediction.option1}: ${formatEth(prediction.totalBetOption1)}`}
+        />
+        <div
+          className="h-8 min-w-[4px] border-l-2 border-black bg-red-500"
+          style={{ flex: pct2 || 0.001 }}
+          title={`${prediction.option2}: ${formatEth(prediction.totalBetOption2)}`}
+        />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-medium text-zinc-500">
+        <span>{prediction.option1} {formatEth(prediction.totalBetOption1)}</span>
+        <span className="shrink-0 text-zinc-400">{formatEth(prediction.totalBetOption1 + prediction.totalBetOption2)} total</span>
+        <span>{prediction.option2} {formatEth(prediction.totalBetOption2)}</span>
+      </div>
+      {live && (showLock || showResolve || showReject) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {showLock && (
+            <button
+              type="button"
+              disabled={locking}
+              onClick={handleLock}
+              className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {locking ? "Locking…" : "Lock (stop bets)"}
+            </button>
+          )}
+          {showResolve && (
+            <>
+              <button
+                type="button"
+                disabled={resolving}
+                onClick={() => handleResolve(1)}
+                className="rounded bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                Resolve: {prediction.option1}
+              </button>
+              <button
+                type="button"
+                disabled={resolving}
+                onClick={() => handleResolve(2)}
+                className="rounded bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                Resolve: {prediction.option2}
+              </button>
+            </>
+          )}
+          {showReject && (
+            <button
+              type="button"
+              disabled={rejecting}
+              onClick={handleReject}
+              className="rounded border border-amber-600 bg-amber-900/30 px-2.5 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+            >
+              {rejecting ? "Rejecting…" : "Reject (refund all)"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -277,13 +531,29 @@ function PredictionCard({ prediction }: { prediction: PredictionCardData }) {
   );
 }
 
-export default function TwitchChat({ channel, className = "" }: TwitchChatProps) {
+export default function TwitchChat({
+  channel,
+  className = "",
+  streamerAddress = null,
+  canManagePredictions = false,
+  getWalletClient,
+}: TwitchChatProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "predictions">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<unknown>(null);
+
+  const {
+    predictions: realPredictions,
+    loading: predictionsLoading,
+    error: predictionsError,
+    createPrediction,
+    lockPrediction,
+    resolvePrediction,
+    cancelPrediction,
+  } = usePredictions(streamerAddress ?? null, { getWalletClient });
 
   const scrollToBottom = useCallback(() => {
     listRef.current?.scrollTo({
@@ -478,9 +748,40 @@ export default function TwitchChat({ channel, className = "" }: TwitchChatProps)
           className="font-display flex-1 min-h-0 overflow-y-auto px-3 py-3 flex flex-col gap-3"
           style={{ minHeight: 280, maxHeight: "calc(100vh - 14rem)" }}
         >
-          {MOCK_PREDICTIONS.map((p) => (
-            <PredictionCard key={p.id} prediction={p} />
-          ))}
+          {canManagePredictions && streamerAddress && (
+            <CreatePredictionForm
+              streamerAddress={streamerAddress}
+              onSubmit={async (title, option1, option2) => {
+                await createPrediction(streamerAddress, title, option1, option2);
+              }}
+              disabled={predictionsLoading}
+            />
+          )}
+          {predictionsError && (
+            <p className="text-xs text-amber-400">{predictionsError}</p>
+          )}
+          {streamerAddress ? (
+            predictionsLoading ? (
+              <p className="text-sm text-zinc-500">Loading predictions…</p>
+            ) : realPredictions.length === 0 ? (
+              <p className="text-sm text-zinc-500">No predictions yet.</p>
+            ) : (
+              realPredictions.map((p) => (
+                <RealPredictionCard
+                  key={p.id}
+                  prediction={p}
+                  canManage={canManagePredictions}
+                  onLock={lockPrediction}
+                  onResolve={resolvePrediction}
+                  onReject={cancelPrediction}
+                />
+              ))
+            )
+          ) : (
+            MOCK_PREDICTIONS.map((p) => (
+              <PredictionCard key={p.id} prediction={p} />
+            ))
+          )}
         </div>
       )}
     </div>
