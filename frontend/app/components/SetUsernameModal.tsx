@@ -3,6 +3,7 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useCallback, useEffect, useState } from "react";
 import { ENS_PARENT_DOMAIN, ENS_SUBDOMAIN_LABEL_REGEX } from "@/lib/constants";
+import { usePlatformWallet } from "@/lib/hooks/usePlatformWallet";
 import { apiUserUrl } from "@/lib/api";
 
 function CloseIcon() {
@@ -55,7 +56,8 @@ export function SetUsernameModal({
   platformAddress,
   onRegistered,
 }: SetUsernameModalProps) {
-  const { getAccessToken, user } = usePrivy();
+  const { getAccessToken } = usePrivy();
+  const { metamaskAddress } = usePlatformWallet();
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -96,8 +98,8 @@ export function SetUsernameModal({
             ...(token && { Authorization: `Bearer ${token}` }),
           },
           body: JSON.stringify({
-            metamaskAddress: platformAddress,
-            privyAddress: user?.id ?? platformAddress,
+            metamaskAddress: metamaskAddress ?? platformAddress,
+            privyAddress: platformAddress,
             ensDomain: normalized,
           }),
         });
@@ -117,30 +119,7 @@ export function SetUsernameModal({
     } finally {
       setLoading(false);
     }
-  }, [platformAddress, getAccessToken, isValid, normalized, onRegistered, onClose]);
-
-  const handleSkip = useCallback(async () => {
-    if (platformAddress && getAccessToken && user) {
-      try {
-        const token = await getAccessToken();
-        await fetch(apiUserUrl(), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token && { Authorization: `Bearer ${token}` }),
-          },
-          body: JSON.stringify({
-            metamaskAddress: platformAddress,
-            privyAddress: user.id ?? platformAddress,
-            ensDomain: null,
-          }),
-        });
-      } catch {
-        // non-blocking
-      }
-    }
-    onClose();
-  }, [platformAddress, getAccessToken, user, onClose]);
+  }, [platformAddress, metamaskAddress, getAccessToken, isValid, normalized, onRegistered, onClose]);
 
   useEffect(() => {
     if (open) {
@@ -161,7 +140,7 @@ export function SetUsernameModal({
     >
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={success ? undefined : handleSkip}
+        onClick={success ? onClose : undefined}
         aria-hidden
       />
       <div className="relative mx-auto w-full max-w-md rounded-xl border border-border-default bg-bg-card shadow-2xl">
@@ -169,14 +148,16 @@ export function SetUsernameModal({
           <h2 id="set-username-modal-title" className="text-lg font-semibold text-white">
             Set your Prophit username
           </h2>
-          <button
-            type="button"
-            onClick={handleSkip}
-            className="rounded p-1.5 text-zinc-400 hover:bg-bg-elevated hover:text-white transition-colors"
-            aria-label="Close"
-          >
-            <CloseIcon />
-          </button>
+          {success && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1.5 text-zinc-400 hover:bg-bg-elevated hover:text-white transition-colors"
+              aria-label="Close"
+            >
+              <CloseIcon />
+            </button>
+          )}
         </div>
 
         <div className="px-4 py-4">
@@ -224,23 +205,14 @@ export function SetUsernameModal({
                 3–63 characters, lowercase letters, numbers, and hyphens only.
               </p>
 
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleSkip}
-                  className="flex-1 rounded-lg border border-border-default bg-bg-elevated px-4 py-2.5 text-sm font-medium text-text-muted hover:bg-bg-card hover:text-white transition-colors"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRegister}
-                  disabled={!isValid || loading}
-                  className="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 disabled:pointer-events-none transition-colors"
-                >
-                  {loading ? "Registering…" : "Register"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleRegister}
+                disabled={!isValid || loading}
+                className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50 disabled:pointer-events-none transition-colors"
+              >
+                {loading ? "Registering…" : "Register"}
+              </button>
             </>
           )}
         </div>

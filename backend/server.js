@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { checkUsername } from "./routes/ens.js";
 import { getUser, postUser } from "./routes/user.js";
 
 const app = express();
@@ -11,6 +12,7 @@ app.use(express.json());
 
 app.get("/api/user", getUser);
 app.post("/api/user", postUser);
+app.get("/api/ens/check-username", checkUsername);
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 

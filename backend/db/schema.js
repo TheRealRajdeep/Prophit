@@ -1,4 +1,12 @@
-import { pgTable, serial, text, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  serial,
+  text,
+  boolean,
+  timestamp,
+  decimal,
+  integer,
+} from "drizzle-orm/pg-core";
 
 /**
  * Users table.
@@ -22,4 +30,23 @@ export const users = pgTable("users", {
 export const followedChannels = pgTable("followed_channels", {
   ensDomain: text("ens_domain").primaryKey(),
   followedStreamers: text("followed_streamers").array().notNull().default([]),
+});
+
+/**
+ * Prediction history per user.
+ * Stores a user's prediction-related data.
+ */
+export const predictionHistory = pgTable("prediction_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  streamerName: text("streamer_name").notNull(),
+  predictionName: text("prediction_name").notNull(),
+  amountInvested: decimal("amount_invested", {
+    precision: 18,
+    scale: 6,
+  }).notNull(),
+  profitLoss: decimal("profit_loss", { precision: 18, scale: 6 }).notNull(),
 });

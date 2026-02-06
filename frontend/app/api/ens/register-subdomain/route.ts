@@ -102,6 +102,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Ensure username is not already taken (another user in DB)
+  const backendUrl =
+    process.env.NEXT_PUBLIC_API_URL ??
+    process.env.API_URL ??
+    "http://localhost:3001";
+  try {
+    const checkRes = await fetch(
+      `${backendUrl.replace(/\/$/, "")}/api/ens/check-username?username=${encodeURIComponent(normalizedLabel)}`
+    );
+    if (checkRes.ok) {
+      const { taken } = (await checkRes.json()) as { taken?: boolean };
+      if (taken) {
+        return NextResponse.json(
+          { error: "Username already taken" },
+          { status: 409 }
+        );
+      }
+    }
+  } catch (checkErr) {
+    console.error("ENS check-username error:", checkErr);
+    return NextResponse.json(
+      { error: "Could not verify username availability" },
+      { status: 503 }
+    );
+  }
+
   const privateKey = process.env.PROPHIT_ENS_OWNER_PRIVATE_KEY;
   if (!privateKey || !privateKey.startsWith("0x")) {
     return NextResponse.json(
@@ -152,6 +178,27 @@ export async function POST(request: NextRequest) {
       subExpiry = parentExpiry > 0n ? parentExpiry : 4102444800n;
     } catch {
       subExpiry = 4102444800n;
+    }
+
+    // On-chain: do not overwrite if subdomain already exists and is owned by someone else
+    const fullSubdomainName =
+      parentDomain.includes(".") ? `${normalizedLabel}.${parentDomain}` : `${normalizedLabel}.${parentDomain}.eth`;
+    const childNode = namehash(normalize(fullSubdomainName));
+    try {
+      const [existingOwner] = await nameWrapper.read.getData([BigInt(childNode)]);
+      const zeroAddress = "0x0000000000000000000000000000000000000000";
+      if (
+        existingOwner &&
+        existingOwner !== zeroAddress &&
+        (existingOwner as string).toLowerCase() !== ownerAddress.toLowerCase()
+      ) {
+        return NextResponse.json(
+          { error: "Username already taken" },
+          { status: 409 }
+        );
+      }
+    } catch {
+      // getData may fail if subdomain doesn't exist; that's fine (available)
     }
 
     const txHash = await nameWrapper.write.setSubnodeRecord([

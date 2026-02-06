@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 
@@ -24,7 +24,12 @@ export async function getUser(req, res) {
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.metamaskAddress, normalized));
+      .where(
+        or(
+          eq(users.metamaskAddress, normalized),
+          eq(users.privyAddress, normalized),
+        ),
+      );
 
     if (!user) {
       return res.status(404).json(null);
@@ -77,10 +82,36 @@ export async function postUser(req, res) {
       .status(400)
       .json({ error: "metamaskAddress is not a valid Ethereum address" });
   }
+  if (!isAddress(privyAddress)) {
+    return res
+      .status(400)
+      .json({ error: "privyAddress is not a valid Ethereum address" });
+  }
 
   const normalizedAddress = metamaskAddress.toLowerCase();
+  const normalizedPrivyAddress = privyAddress.toLowerCase();
 
   try {
+    // If setting ensDomain, ensure no other user already has it
+    if (ensDomain != null && String(ensDomain).trim() !== "") {
+      const normalizedEns = String(ensDomain).trim().toLowerCase();
+      const [otherUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.ensDomain, normalizedEns),
+            ne(users.metamaskAddress, normalizedAddress),
+          ),
+        )
+        .limit(1);
+      if (otherUser) {
+        return res
+          .status(409)
+          .json({ error: "Username already taken", code: "ENS_TAKEN" });
+      }
+    }
+
     const [existing] = await db
       .select()
       .from(users)
@@ -88,7 +119,7 @@ export async function postUser(req, res) {
 
     const payload = {
       metamaskAddress: normalizedAddress,
-      privyAddress,
+      privyAddress: normalizedPrivyAddress,
       ensDomain: ensDomain ?? null,
       isStreamer: isStreamer ?? false,
       moderatorsFor: Array.isArray(moderatorsFor) ? moderatorsFor : [],
@@ -98,7 +129,7 @@ export async function postUser(req, res) {
       await db
         .update(users)
         .set({
-          privyAddress,
+          privyAddress: normalizedPrivyAddress,
           ensDomain: payload.ensDomain,
           isStreamer: payload.isStreamer,
           moderatorsFor: payload.moderatorsFor,

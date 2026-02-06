@@ -56,6 +56,25 @@ function getEmbeddedWalletsFromLinkedAccounts(linkedAccounts: unknown[]): Linked
     .sort((a, b) => (a.walletIndex ?? 0) - (b.walletIndex ?? 0));
 }
 
+/** External wallets (MetaMask, Coinbase, etc.) - NOT embedded/privy wallets. */
+function getExternalWalletsFromWallets(wallets: unknown[]): LinkedWallet[] {
+  const w = (wallets || []).filter(isPrivyWalletLite);
+  const normalized: LinkedWallet[] = w.map((x) => ({
+    type: "wallet",
+    address: x.address,
+    walletClientType: x.walletClientType,
+    walletIndex: x.walletIndex ?? x.hdWalletIndex ?? null,
+  }));
+  return normalized
+    .filter(
+      (a) =>
+        a.type === "wallet" &&
+        a.walletClientType !== "privy" &&
+        a.walletClientType !== "privy-v2"
+    )
+    .sort((a, b) => (a.walletIndex ?? 0) - (b.walletIndex ?? 0));
+}
+
 /**
  * Resolves the user's embedded wallet address.
  *
@@ -79,6 +98,15 @@ export function usePlatformWallet() {
 
   const embeddedWallet = useMemo(() => embeddedWallets[0] ?? null, [embeddedWallets]);
 
+  const externalWallets = useMemo(
+    () => getExternalWalletsFromWallets(wallets ?? []),
+    [wallets]
+  );
+  const metamaskAddress = useMemo(
+    () => (externalWallets[0]?.address ?? null) as `0x${string}` | null,
+    [externalWallets]
+  );
+
   const mainAddress = user?.wallet?.address ?? null;
   const platformAddress =
     embeddedWallet?.address ?? (mainAddress as `0x${string}` | null);
@@ -100,6 +128,7 @@ export function usePlatformWallet() {
 
   return {
     platformAddress: platformAddress as `0x${string}` | null,
+    metamaskAddress,
     mainAddress,
     hasDedicatedPlatformWallet,
     ensurePlatformWallet,
