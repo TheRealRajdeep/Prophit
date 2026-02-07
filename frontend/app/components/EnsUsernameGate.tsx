@@ -1,6 +1,5 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
 import { useCallback, useEffect, useState } from "react";
 import { usePlatformWallet } from "@/lib/hooks/usePlatformWallet";
 import { useEnsName } from "@/lib/hooks/useEnsName";
@@ -12,10 +11,8 @@ import { fetchEnsStatusForAddress, SetUsernameModal } from "./SetUsernameModal";
  * If they have neither, show the SetUsernameModal.
  */
 export function EnsUsernameGate() {
-  const { user } = usePrivy();
-  const { platformAddress } = usePlatformWallet();
-  const walletAddress = user?.wallet?.address as string | null | undefined;
-  const addressForGate = platformAddress ?? walletAddress ?? null;
+  const { embeddedWalletAddress } = usePlatformWallet();
+  const addressForGate = embeddedWalletAddress ?? null;
   const { ensName, isLoading } = useEnsName(addressForGate);
   const [showModal, setShowModal] = useState(false);
   const [hasUsernameInDb, setHasUsernameInDb] = useState<boolean | null>(null);

@@ -126,8 +126,11 @@ export function usePlatformWallet() {
     }
   }, [user, creating, embeddedWallets, createWallet]);
 
+  const embeddedWalletAddress = embeddedWallet?.address ?? null;
+
   return {
     platformAddress: platformAddress as `0x${string}` | null,
+    embeddedWalletAddress: embeddedWalletAddress as `0x${string}` | null,
     metamaskAddress,
     mainAddress,
     hasDedicatedPlatformWallet,

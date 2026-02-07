@@ -49,40 +49,42 @@ function BellIcon() {
 
 export default function Header() {
   const { ready, authenticated, user, login, logout } = usePrivy();
-  const { platformAddress } = usePlatformWallet();
+  const { platformAddress, embeddedWalletAddress } = usePlatformWallet();
   const { usdcBalance, loading, refetch: refetchBalance } = usePlatformBalance();
   const walletAddress = user?.wallet?.address as string | undefined;
   const [depositModalOpen, setDepositModalOpen] = useState(false);
 
   const addressForDisplay = platformAddress ?? walletAddress ?? null;
-  const { ensName } = useEnsName(addressForDisplay);
+  const { ensName } = useEnsName(embeddedWalletAddress ?? null);
   const [storedUsername, setStoredUsername] = useState<string | null>(null);
 
+  const addressForEns = embeddedWalletAddress ?? null;
+
   useEffect(() => {
-    if (!addressForDisplay) {
+    if (!addressForEns) {
       setStoredUsername(null);
       return;
     }
     let cancelled = false;
-    fetchEnsUsernameForAddress(addressForDisplay).then((name) => {
+    fetchEnsUsernameForAddress(addressForEns).then((name) => {
       if (!cancelled) setStoredUsername(name);
     });
     return () => {
       cancelled = true;
     };
-  }, [addressForDisplay]);
+  }, [addressForEns]);
 
   useEffect(() => {
-    if (!addressForDisplay) return;
+    if (!addressForEns) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ address: string }>).detail;
-      if (detail?.address === addressForDisplay.toLowerCase()) {
-        fetchEnsUsernameForAddress(addressForDisplay).then(setStoredUsername);
+      if (detail?.address === addressForEns.toLowerCase()) {
+        fetchEnsUsernameForAddress(addressForEns).then(setStoredUsername);
       }
     };
     window.addEventListener("prophit-ens-registered", handler);
     return () => window.removeEventListener("prophit-ens-registered", handler);
-  }, [addressForDisplay]);
+  }, [addressForEns]);
 
   const displayName =
     addressForDisplay == null
