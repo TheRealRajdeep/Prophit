@@ -101,3 +101,50 @@ body {
 *::-webkit-scrollbar-thumb:hover {
   background: var(--accent-primary);
 }
+
+/* Bottom sheet slide-up animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
+}
+
+/* Tug-of-war bar live animation - opposing pulses for tug effect */
+@keyframes tug-pulse-left {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.9;
+    filter: brightness(1.1);
+  }
+}
+
+@keyframes tug-pulse-right {
+  0%, 100% {
+    opacity: 0.9;
+    filter: brightness(1.1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.tug-bar-live .tug-segment-left {
+  animation: tug-pulse-left 2.5s ease-in-out infinite;
+}
+
+.tug-bar-live .tug-segment-right {
+  animation: tug-pulse-right 2.5s ease-in-out infinite;
+}

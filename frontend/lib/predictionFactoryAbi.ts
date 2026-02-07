@@ -1,8 +1,16 @@
 /**
- * Minimal ABI for PredictionFactory (create, lock, resolve, cancel, read).
+ * Minimal ABI for PredictionFactoryUSDC (create, lock, resolve, cancel, read).
  * Status: 0 = Open, 1 = Locked, 2 = Resolved, 3 = Cancelled.
+ * Includes custom errors for decoding revert reasons.
  */
 export const PREDICTION_FACTORY_ABI = [
+  { inputs: [], name: "Unauthorized", type: "error" },
+  { inputs: [], name: "InvalidOption", type: "error" },
+  { inputs: [], name: "InvalidStatus", type: "error" },
+  { inputs: [], name: "InvalidAmount", type: "error" },
+  { inputs: [], name: "NoBetToClaim", type: "error" },
+  { inputs: [], name: "TransferFailed", type: "error" },
+  { inputs: [], name: "PredictionNotFound", type: "error" },
   {
     inputs: [],
     name: "nextPredictionId",
@@ -72,6 +80,34 @@ export const PREDICTION_FACTORY_ABI = [
     name: "cancelPrediction",
     outputs: [],
     stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "predictionId", type: "uint256" },
+      { internalType: "uint8", name: "option", type: "uint8" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "placeBet",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "predictionId", type: "uint256" }],
+    name: "claimWinnings",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "predictionId", type: "uint256" },
+      { internalType: "address", name: "user", type: "address" },
+    ],
+    name: "getPayout",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
     type: "function",
   },
 ] as const;

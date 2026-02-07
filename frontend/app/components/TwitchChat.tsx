@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import {
   usePredictions,
+  getPayout,
   predictionStatusLabel,
   isLive,
   canLock,
   canResolve,
   canCancel,
+  usePlatformWallet,
   type Prediction,
 } from "@/lib/hooks";
 
@@ -58,6 +60,8 @@ type TwitchChatProps = {
   canManagePredictions?: boolean;
   /** For sending create/lock/resolve/cancel tx. */
   getWalletClient?: () => Promise<import("viem").WalletClient | null>;
+  /** For betting: use Privy embedded wallet so ETH is deducted from the user's Privy balance. */
+  getWalletClientForBetting?: () => Promise<import("viem").WalletClient | null>;
 };
 
 // Outcome option for expanded prediction (left/right)
@@ -162,11 +166,33 @@ function VolumeIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-function formatEth(wei: bigint): string {
-  const eth = Number(wei) / 1e18;
-  if (eth >= 1e6) return `${(eth / 1e6).toFixed(1)}M`;
-  if (eth >= 1e3) return `${(eth / 1e3).toFixed(1)}k`;
-  return eth.toFixed(2);
+function ClockIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  );
+}
+
+function PrizeIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" />
+    </svg>
+  );
+}
+
+/** Format USDC amount (6 decimals) for display. */
+function formatUsdc(units: bigint): string {
+  const usdc = Number(units) / 1e6;
+  if (usdc >= 1e6) return `$${(usdc / 1e6).toFixed(1)}M`;
+  if (usdc >= 1e3) return `$${(usdc / 1e3).toFixed(1)}k`;
+  if (usdc >= 1) return `$${usdc.toFixed(2)}`;
+  if (usdc >= 0.01) return `$${usdc.toFixed(2)}`;
+  if (usdc > 0) return `$${usdc.toFixed(4)}`;
+  return "$0.00";
 }
 
 /** Create prediction form for streamer/moderator. */
@@ -271,23 +297,53 @@ function CreatePredictionForm({
   );
 }
 
-/** Single prediction from contract with optional lock/resolve/reject for managers. */
+/** Stat row item for prediction detail card (icon + value, compact vertical layout) */
+function StatItem({
+  icon: Icon,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="h-4 w-4 shrink-0 text-blue-400/90" />
+      <span className="text-sm font-semibold text-amber-400">{value}</span>
+    </div>
+  );
+}
+
+/** Single prediction from contract: compact card, expands to bottom sheet with tug-of-war, stats, and vote inputs. */
 function RealPredictionCard({
   prediction,
   canManage,
   onLock,
   onResolve,
   onReject,
+  onPlaceBet,
+  onClaimWinnings,
+  userAddressForClaim,
 }: {
   prediction: Prediction;
   canManage: boolean;
   onLock: (id: number) => Promise<void>;
   onResolve: (id: number, option: 1 | 2) => Promise<void>;
   onReject: (id: number) => Promise<void>;
+  onPlaceBet?: (predictionId: number, option: 1 | 2, amountEth: string) => Promise<void>;
+  onClaimWinnings?: (id: number) => Promise<void>;
+  userAddressForClaim?: Address | null;
 }) {
+  const [detailOpen, setDetailOpen] = useState(false);
   const [locking, setLocking] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [betting, setBetting] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState<bigint | null>(null);
+  const [amount1, setAmount1] = useState("1");
+  const [amount2, setAmount2] = useState("1");
+  const [betError, setBetError] = useState<string | null>(null);
+
   const total = Number(prediction.totalBetOption1 + prediction.totalBetOption2);
   const o1 = Number(prediction.totalBetOption1);
   const o2 = Number(prediction.totalBetOption2);
@@ -297,6 +353,28 @@ function RealPredictionCard({
   const showLock = canManage && canLock(prediction.status);
   const showResolve = canManage && canResolve(prediction.status);
   const showReject = canManage && canCancel(prediction.status);
+  const isOpen = prediction.status === 0;
+
+  // Odds: 1:X = total / optionPool (pari-mutuel)
+  const odds1 = total > 0 && o1 > 0 ? (total / o1).toFixed(2) : "—";
+
+  const handlePlaceBet = async (option: 1 | 2) => {
+    if (!onPlaceBet) return;
+    const amount = (option === 1 ? amount1 : amount2).trim();
+    if (!amount || parseFloat(amount) <= 0) {
+      setBetError("Enter a valid amount (USDC)");
+      return;
+    }
+    setBetError(null);
+    setBetting(true);
+    try {
+      await onPlaceBet(prediction.id, option, amount);
+    } catch (err) {
+      setBetError(err instanceof Error ? err.message : "Bet failed");
+    } finally {
+      setBetting(false);
+    }
+  };
 
   const handleResolve = async (option: 1 | 2) => {
     setResolving(true);
@@ -326,77 +404,253 @@ function RealPredictionCard({
     }
   };
 
+  // Fetch payout when prediction is resolved (for both compact card badge and detail claim button)
+  useEffect(() => {
+    if (prediction.status !== 2 || !userAddressForClaim) {
+      setPayoutAmount(null);
+      return;
+    }
+    let cancelled = false;
+    getPayout(prediction.id, userAddressForClaim).then((amount) => {
+      if (!cancelled) setPayoutAmount(amount);
+    });
+    return () => { cancelled = true; };
+  }, [prediction.id, prediction.status, userAddressForClaim]);
+
+  const handleClaim = async () => {
+    if (!onClaimWinnings) return;
+    setClaiming(true);
+    try {
+      await onClaimWinnings(prediction.id);
+      setPayoutAmount(0n);
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  const isResolved = prediction.status === 2;
+  const canClaim = isResolved && onClaimWinnings && userAddressForClaim && payoutAmount !== null && payoutAmount > 0n;
+
   return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-800/80 p-3">
-      <p className="text-sm font-semibold tracking-tight text-white">{prediction.title}</p>
-      <p className="mt-0.5 text-xs font-medium text-zinc-400">
-        {prediction.option1} vs {prediction.option2}
-        <span className="ml-1.5 rounded bg-zinc-700 px-1 text-[10px] text-zinc-300">
-          {predictionStatusLabel(prediction.status)}
-        </span>
-      </p>
-      <div className="mt-3 flex w-full items-stretch gap-0 overflow-hidden rounded-md border-4 border-black bg-zinc-800 shadow-[2px_2px_0_0_rgba(0,0,0,1)]">
-        <div
-          className="h-8 min-w-[4px] border-r-2 border-black bg-blue-500"
-          style={{ flex: pct1 || 0.001 }}
-          title={`${prediction.option1}: ${formatEth(prediction.totalBetOption1)}`}
-        />
-        <div
-          className="h-8 min-w-[4px] border-l-2 border-black bg-red-500"
-          style={{ flex: pct2 || 0.001 }}
-          title={`${prediction.option2}: ${formatEth(prediction.totalBetOption2)}`}
-        />
-      </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-medium text-zinc-500">
-        <span>{prediction.option1} {formatEth(prediction.totalBetOption1)}</span>
-        <span className="shrink-0 text-zinc-400">{formatEth(prediction.totalBetOption1 + prediction.totalBetOption2)} total</span>
-        <span>{prediction.option2} {formatEth(prediction.totalBetOption2)}</span>
-      </div>
-      {live && (showLock || showResolve || showReject) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {showLock && (
-            <button
-              type="button"
-              disabled={locking}
-              onClick={handleLock}
-              className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-            >
-              {locking ? "Locking…" : "Lock (stop bets)"}
-            </button>
+    <>
+      {/* Compact clickable summary */}
+      <button
+        type="button"
+        onClick={() => setDetailOpen(true)}
+        className="w-full rounded-lg border border-zinc-700 bg-zinc-800/80 p-3 text-left transition hover:border-zinc-600 hover:bg-zinc-800"
+      >
+        <p className="text-sm font-semibold tracking-tight text-white">{prediction.title}</p>
+        <p className="mt-0.5 text-xs font-medium text-zinc-400">
+          {prediction.option1} vs {prediction.option2}
+          <span className="ml-1.5 rounded bg-zinc-700 px-1 text-[10px] text-zinc-300">
+            {predictionStatusLabel(prediction.status)}
+          </span>
+          {canClaim && (
+            <span className="ml-1.5 rounded bg-emerald-600/80 px-1 text-[10px] font-medium text-white">
+              Claim
+            </span>
           )}
-          {showResolve && (
-            <>
+        </p>
+        <div className="mt-3 flex w-full items-stretch gap-0 overflow-hidden rounded-md border-4 border-black bg-zinc-800 shadow-[2px_2px_0_0_rgba(0,0,0,1)]">
+          <div
+            className="h-8 min-w-[4px] border-r-2 border-black bg-blue-500"
+            style={{ flex: pct1 || 0.001 }}
+          />
+          <div
+            className="h-8 min-w-[4px] border-l-2 border-black bg-red-500"
+            style={{ flex: pct2 || 0.001 }}
+          />
+        </div>
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-medium text-zinc-500">
+          <span>{prediction.option1} {formatUsdc(prediction.totalBetOption1)}</span>
+          <span className="shrink-0 text-zinc-400">{formatUsdc(prediction.totalBetOption1 + prediction.totalBetOption2)} total</span>
+          <span>{prediction.option2} {formatUsdc(prediction.totalBetOption2)}</span>
+        </div>
+        <p className="mt-1.5 text-[10px] text-zinc-500">Tap to vote</p>
+      </button>
+
+      {/* Bottom sheet - slides up on click */}
+      {detailOpen && (
+        <div
+          className="absolute inset-0 z-50 flex items-end justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Prediction details"
+        >
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDetailOpen(false)}
+            aria-hidden
+          />
+          <div
+            className="relative w-full max-w-lg animate-slide-up rounded-t-2xl border border-zinc-700 border-b-0 bg-zinc-900 shadow-xl"
+            style={{ maxHeight: "85vh" }}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-700 bg-zinc-900 px-4 py-3">
+              <h3 className="text-sm font-semibold text-white">{prediction.title}</h3>
               <button
                 type="button"
-                disabled={resolving}
-                onClick={() => handleResolve(1)}
-                className="rounded bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                onClick={() => setDetailOpen(false)}
+                className="rounded-full p-2 text-zinc-400 hover:bg-zinc-700 hover:text-white"
+                aria-label="Close"
               >
-                Resolve: {prediction.option1}
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
               </button>
-              <button
-                type="button"
-                disabled={resolving}
-                onClick={() => handleResolve(2)}
-                className="rounded bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-              >
-                Resolve: {prediction.option2}
-              </button>
-            </>
-          )}
-          {showReject && (
-            <button
-              type="button"
-              disabled={rejecting}
-              onClick={handleReject}
-              className="rounded border border-amber-600 bg-amber-900/30 px-2.5 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
-            >
-              {rejecting ? "Rejecting…" : "Reject (refund all)"}
-            </button>
-          )}
+            </div>
+
+            <div className="overflow-y-auto px-4 pb-6 pt-4" style={{ maxHeight: "calc(85vh - 52px)" }}>
+              <p className="text-xs font-medium text-zinc-400">
+                {prediction.option1} vs {prediction.option2}
+                <span className="ml-1.5 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  {predictionStatusLabel(prediction.status)}
+                </span>
+              </p>
+
+              {/* Animated tug-of-war bar with live pulse when open */}
+              <div className={`mt-4 flex w-full items-stretch gap-0 overflow-hidden rounded-lg border-4 border-black bg-zinc-800 shadow-[3px_3px_0_0_rgba(0,0,0,1)] ${live ? "tug-bar-live" : ""}`}>
+                <div
+                  className="tug-segment-left h-10 min-w-[8px] border-r-2 border-black bg-blue-500 transition-[flex] duration-500 ease-out"
+                  style={{ flex: pct1 || 0.001 }}
+                  title={`${prediction.option1}: ${formatUsdc(prediction.totalBetOption1)}`}
+                />
+                <div
+                  className="tug-segment-right h-10 min-w-[8px] border-l-2 border-black bg-red-500 transition-[flex] duration-500 ease-out"
+                  style={{ flex: pct2 || 0.001 }}
+                  title={`${prediction.option2}: ${formatUsdc(prediction.totalBetOption2)}`}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-xs font-medium text-zinc-500">
+                <span>{prediction.option1} {formatUsdc(prediction.totalBetOption1)}</span>
+                <span className="shrink-0 text-zinc-400">{formatUsdc(prediction.totalBetOption1 + prediction.totalBetOption2)} total</span>
+                <span>{prediction.option2} {formatUsdc(prediction.totalBetOption2)}</span>
+              </div>
+
+              {/* Stats row (refer to second image: time, odds, participants, volume) */}
+              <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border border-zinc-700 bg-zinc-800/60 p-3">
+                <StatItem icon={ClockIcon} value={live ? "Live" : "Closed"} />
+                <StatItem icon={TrophyIcon} value={`1:${odds1}`} />
+                <StatItem icon={PeopleIcon} value="—" />
+                <StatItem icon={PrizeIcon} value={formatUsdc(prediction.totalBetOption1 + prediction.totalBetOption2)} />
+              </div>
+
+              {/* Vote inputs - one per option */}
+              {isOpen && onPlaceBet && !canManage && (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Amount (USDC)"
+                      value={amount1}
+                      onChange={(e) => {
+                        setAmount1(e.target.value);
+                        setBetError(null);
+                      }}
+                      className="flex-1 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={betting}
+                      onClick={() => handlePlaceBet(1)}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      {betting ? "…" : prediction.option1}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="Amount (USDC)"
+                      value={amount2}
+                      onChange={(e) => {
+                        setAmount2(e.target.value);
+                        setBetError(null);
+                      }}
+                      className="flex-1 rounded-lg border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={betting}
+                      onClick={() => handlePlaceBet(2)}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                    >
+                      {betting ? "…" : prediction.option2}
+                    </button>
+                  </div>
+                  {betError && <p className="text-xs text-red-400">{betError}</p>}
+                </div>
+              )}
+
+              {/* Manager actions */}
+              {live && (showLock || showResolve || showReject) && (
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-700 pt-4">
+                  {showLock && (
+                    <button
+                      type="button"
+                      disabled={locking}
+                      onClick={handleLock}
+                      className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                    >
+                      {locking ? "Locking…" : "Lock (stop bets)"}
+                    </button>
+                  )}
+                  {showResolve && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={resolving}
+                        onClick={() => handleResolve(1)}
+                        className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                      >
+                        Resolve: {prediction.option1}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={resolving}
+                        onClick={() => handleResolve(2)}
+                        className="rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                      >
+                        Resolve: {prediction.option2}
+                      </button>
+                    </>
+                  )}
+                  {showReject && (
+                    <button
+                      type="button"
+                      disabled={rejecting}
+                      onClick={handleReject}
+                      className="rounded-lg border border-amber-600 bg-amber-900/30 px-2.5 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                    >
+                      {rejecting ? "Rejecting…" : "Reject (refund all)"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Claim winnings for resolved predictions */}
+              {canClaim && (
+                <div className="mt-4 rounded-lg border border-emerald-600/50 bg-emerald-900/20 p-4">
+                  <p className="text-sm font-semibold text-emerald-400">
+                    You won {formatUsdc(payoutAmount ?? 0n)}!
+                  </p>
+                  <button
+                    type="button"
+                    disabled={claiming}
+                    onClick={handleClaim}
+                    className="mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    {claiming ? "Claiming…" : "Claim winnings"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -537,6 +791,7 @@ export default function TwitchChat({
   streamerAddress = null,
   canManagePredictions = false,
   getWalletClient,
+  getWalletClientForBetting,
 }: TwitchChatProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "predictions">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -545,6 +800,7 @@ export default function TwitchChat({
   const listRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<unknown>(null);
 
+  const { platformAddress } = usePlatformWallet();
   const {
     predictions: realPredictions,
     loading: predictionsLoading,
@@ -553,7 +809,9 @@ export default function TwitchChat({
     lockPrediction,
     resolvePrediction,
     cancelPrediction,
-  } = usePredictions(streamerAddress ?? null, { getWalletClient });
+    placeBet,
+    claimWinnings,
+  } = usePredictions(streamerAddress ?? null, { getWalletClient, getWalletClientForBetting });
 
   const scrollToBottom = useCallback(() => {
     listRef.current?.scrollTo({
@@ -774,6 +1032,9 @@ export default function TwitchChat({
                   onLock={async (id) => { await lockPrediction(id); }}
                   onResolve={async (id, option) => { await resolvePrediction(id, option); }}
                   onReject={async (id) => { await cancelPrediction(id); }}
+                  onPlaceBet={async (id, option, amount) => { await placeBet(id, option, amount); }}
+                  onClaimWinnings={async (id) => { await claimWinnings(id); }}
+                  userAddressForClaim={platformAddress}
                 />
               ))
             )

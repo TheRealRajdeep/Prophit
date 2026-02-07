@@ -108,9 +108,12 @@ export async function POST(request: NextRequest) {
     process.env.API_URL ??
     "http://localhost:3001";
   try {
-    const checkRes = await fetch(
-      `${backendUrl.replace(/\/$/, "")}/api/ens/check-username?username=${encodeURIComponent(normalizedLabel)}`
-    );
+    const checkUrl = `${backendUrl.replace(/\/$/, "")}/api/ens/check-username?username=${encodeURIComponent(normalizedLabel)}`;
+    const checkRes = await fetch(checkUrl, {
+      headers: /ngrok(-free)?\.(app|dev|io)/i.test(checkUrl) || checkUrl.includes("ngrok-free")
+        ? { "ngrok-skip-browser-warning": "true" }
+        : undefined,
+    });
     if (checkRes.ok) {
       const { taken } = (await checkRes.json()) as { taken?: boolean };
       if (taken) {

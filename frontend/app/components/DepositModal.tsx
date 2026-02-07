@@ -40,7 +40,7 @@ const defaultChainId = defaultChain.chain.id;
 export function DepositModal({ open, onClose }: DepositModalProps) {
   const { user } = usePrivy();
   const { ensurePlatformWallet } = usePlatformWallet();
-  const { usdcBalance, loading, address, refetch } = usePlatformBalance();
+  const { totalUsdBalance, loading, address, refetch } = usePlatformBalance();
   const [copied, setCopied] = useState(false);
   const [selectedChainId, setSelectedChainId] = useState<number>(defaultChainId);
   const [selectedTokenId, setSelectedTokenId] = useState<TransferTokenId>("eth");
@@ -92,7 +92,7 @@ export function DepositModal({ open, onClose }: DepositModalProps) {
 
   if (!open) return null;
 
-  const displayBalance = loading ? "—" : `$${usdcBalance}`;
+  const displayBalance = loading ? "—" : `$${totalUsdBalance}`;
 
   return (
     <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="deposit-modal-title">

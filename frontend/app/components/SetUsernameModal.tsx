@@ -7,7 +7,7 @@ import { createWalletClient, custom, getContract, type Address } from "viem";
 import { sepolia } from "viem/chains";
 import { ENS_PARENT_DOMAIN, ENS_REVERSE_REGISTRAR_SEPOLIA, ENS_SUBDOMAIN_LABEL_REGEX } from "@/lib/constants";
 import { usePlatformWallet } from "@/lib/hooks/usePlatformWallet";
-import { apiUserUrl } from "@/lib/api";
+import { apiUserUrl, fetchApi } from "@/lib/api";
 
 const REVERSE_REGISTRAR_ABI = [
   {
@@ -33,7 +33,7 @@ export type EnsModalStatus = "registered" | "skipped" | null;
 export async function fetchEnsStatusForAddress(address: string | null): Promise<EnsModalStatus> {
   if (typeof window === "undefined" || !address) return null;
   try {
-    const res = await fetch(apiUserUrl(address));
+    const res = await fetchApi(apiUserUrl(address));
     if (res.status === 404) return null;
     if (!res.ok) return null;
     const user = await res.json();
@@ -47,7 +47,7 @@ export async function fetchEnsStatusForAddress(address: string | null): Promise<
 export async function fetchEnsUsernameForAddress(address: string | null): Promise<string | null> {
   if (typeof window === "undefined" || !address) return null;
   try {
-    const res = await fetch(apiUserUrl(address));
+    const res = await fetchApi(apiUserUrl(address));
     if (!res.ok) return null;
     const user = await res.json();
     return user.ensDomain ?? null;
@@ -108,7 +108,7 @@ export function SetUsernameModal({
 
         // Save to DB
         const token2 = await getAccessToken();
-        await fetch(apiUserUrl(), {
+        await fetchApi(apiUserUrl(), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

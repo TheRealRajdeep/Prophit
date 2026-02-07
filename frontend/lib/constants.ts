@@ -10,9 +10,12 @@ export const BASE_CHAIN_ID = base.id;
 /** Base Sepolia – prediction contract is deployed here. */
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 
-/** PredictionFactory contract on Base Sepolia. */
+/** PredictionFactoryUSDC contract on Base Sepolia. Deploy with: npx hardhat ignition deploy ignition/modules/PredictionFactoryUSDC.ts --network baseSepolia */
 export const PREDICTION_FACTORY_ADDRESS =
-  "0x7633F422eED717C113B53C17FE3f2Bd9490ca475" as const;
+  "0x2714A0A6c4a35E625dcb0EAF27f04dDD7C67F27B" as const;
+
+/** USDC on Base Sepolia (for prediction betting). */
+export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 
 export const USDC_TOKEN_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as const;
 export const USDC_DECIMALS = 6;
@@ -21,6 +24,29 @@ export const USDC_DECIMALS = 6;
 export const USDC_BY_CHAIN: { chainId: number; address: `0x${string}` }[] = [
   { chainId: baseSepolia.id, address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}` },
   { chainId: sepolia.id, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}` },
+];
+
+/** Tokens to fetch for total USD balance (deposits). eth = native, others = ERC20. */
+export type DepositTokenId = "eth" | "usdc" | "weth";
+export const DEPOSIT_TOKENS_BY_CHAIN: {
+  chainId: number;
+  tokens: { id: DepositTokenId; address: `0x${string}` | null; decimals: number }[];
+}[] = [
+  {
+    chainId: baseSepolia.id,
+    tokens: [
+      { id: "eth", address: null, decimals: 18 },
+      { id: "usdc", address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`, decimals: 6 },
+      { id: "weth", address: "0x4200000000000000000000000000000000000006" as `0x${string}`, decimals: 18 },
+    ],
+  },
+  {
+    chainId: sepolia.id,
+    tokens: [
+      { id: "eth", address: null, decimals: 18 },
+      { id: "usdc", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as `0x${string}`, decimals: 6 },
+    ],
+  },
 ];
 
 /** Chains supported in the Transfer Crypto flow (testnets only). */

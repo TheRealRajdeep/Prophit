@@ -18,3 +18,11 @@ export function apiStreamerUrl(channel: string): string {
   const base = getApiUrl().replace(/\/$/, "");
   return `${base}/api/streamer?channel=${encodeURIComponent(channel)}`;
 }
+
+/** Fetch from backend API. Adds ngrok-skip-browser-warning when URL is ngrok (free tier). */
+export async function fetchApi(url: string, init?: RequestInit): Promise<Response> {
+  const isNgrok = /ngrok(-free)?\.(app|dev|io)/i.test(url) || url.includes("ngrok-free");
+  const headers = new Headers(init?.headers);
+  if (isNgrok) headers.set("ngrok-skip-browser-warning", "true");
+  return fetch(url, { ...init, headers });
+}

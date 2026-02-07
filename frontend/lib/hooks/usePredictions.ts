@@ -6,13 +6,19 @@ import {
   http,
   type Address,
   type Hash,
+  encodeFunctionData,
+  parseUnits,
+  BaseError,
+  ContractFunctionRevertedError,
 } from "viem";
 import { baseSepolia } from "viem/chains";
 import { useCallback, useEffect, useState } from "react";
 import {
   PREDICTION_FACTORY_ADDRESS,
+  USDC_BASE_SEPOLIA,
   BASE_SEPOLIA_CHAIN_ID,
 } from "@/lib/constants";
+import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
 import {
   PREDICTION_FACTORY_ABI,
   type PredictionStatus,
@@ -35,6 +41,29 @@ export type Prediction = {
   winningOption: number;
   lockTimestamp: bigint;
 };
+
+/** Maps contract revert error names to user-friendly messages. */
+function revertErrorToMessage(errorName: string | undefined): string {
+  if (!errorName) return "Transaction failed. You may not have permission, or the prediction may not exist.";
+  switch (errorName) {
+    case "PredictionNotFound":
+      return "Prediction not found. It may have been created on a different contract or the ID is invalid.";
+    case "Unauthorized":
+      return "You don't have permission to manage this prediction. Only the streamer or an on-chain moderator can lock, resolve, or cancel.";
+    case "InvalidStatus":
+      return "Invalid state: this prediction is already locked, resolved, or cancelled.";
+    case "InvalidOption":
+      return "Invalid option selected.";
+    case "InvalidAmount":
+      return "Invalid amount.";
+    case "NoBetToClaim":
+      return "No bet to claim.";
+    case "TransferFailed":
+      return "Token transfer failed.";
+    default:
+      return `Transaction failed: ${errorName}`;
+  }
+}
 
 const STATUS_OPEN = 0;
 const STATUS_LOCKED = 1;
@@ -75,25 +104,29 @@ export function canCancel(status: PredictionStatus): boolean {
 type UsePredictionsOptions = {
   /** Provide a function that returns the wallet client for sending tx (e.g. from Privy). */
   getWalletClient?: () => Promise<WalletClient | null>;
+  /** For betting: use Privy embedded wallet so ETH is deducted from the user's Privy balance. Falls back to getWalletClient if not provided. */
+  getWalletClientForBetting?: () => Promise<WalletClient | null>;
 };
 
 export function usePredictions(
   streamerAddress: Address | null,
   options: UsePredictionsOptions = {}
 ) {
-  const { getWalletClient } = options;
+  const { getWalletClient, getWalletClientForBetting } = options;
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPredictions = useCallback(async () => {
+  const fetchPredictions = useCallback(async (silent = false) => {
     if (!streamerAddress) {
       setPredictions([]);
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const nextId = (await publicClient.readContract({
         address: PREDICTION_FACTORY_ADDRESS,
@@ -128,16 +161,23 @@ export function usePredictions(
       list.reverse();
       setPredictions(list);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load predictions");
+      if (!silent) setError(e instanceof Error ? e.message : "Failed to load predictions");
       setPredictions([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [streamerAddress]);
 
   useEffect(() => {
     fetchPredictions();
   }, [fetchPredictions]);
+
+  // Poll for updates when others bet (every 5s, silent to avoid loading flash)
+  useEffect(() => {
+    if (!streamerAddress) return;
+    const interval = setInterval(() => fetchPredictions(true), 5_000);
+    return () => clearInterval(interval);
+  }, [streamerAddress, fetchPredictions]);
 
   const write = useCallback(
     async (
@@ -152,13 +192,48 @@ export function usePredictions(
         | readonly [bigint]
         | readonly [Address, string, string, string]
         | readonly [bigint, number];
+      const account = walletClient.account;
+      const writeArgs = args as unknown as WriteArgs;
+      try {
+        // Simulate first to get a clear revert reason if it fails
+        await publicClient.simulateContract({
+          account,
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: fn,
+          args: writeArgs,
+        });
+      } catch (err) {
+        if (err instanceof BaseError) {
+          const revertError = err.walk(
+            (e): e is ContractFunctionRevertedError => e instanceof ContractFunctionRevertedError
+          );
+          if (revertError) {
+            const errorName = revertError.data?.errorName;
+            const msg = revertErrorToMessage(typeof errorName === "string" ? errorName : undefined);
+            throw new Error(msg);
+          }
+        }
+        throw err;
+      }
+      const data = encodeFunctionData({
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: fn,
+        args: writeArgs,
+      });
+      const gas = await publicClient.estimateGas({
+        account,
+        to: PREDICTION_FACTORY_ADDRESS,
+        data,
+      });
       const hash = await walletClient.writeContract({
         address: PREDICTION_FACTORY_ADDRESS,
         abi: PREDICTION_FACTORY_ABI,
         functionName: fn,
-        args: args as unknown as WriteArgs,
+        args: writeArgs,
         chain: baseSepolia,
-        account: walletClient.account,
+        account,
+        gas: gas + BigInt(5000), // add buffer for safety
       });
       return hash;
     },
@@ -214,6 +289,116 @@ export function usePredictions(
     [write, fetchPredictions]
   );
 
+  const placeBet = useCallback(
+    async (
+      predictionId: number,
+      option: 1 | 2,
+      amountUsdc: string
+    ): Promise<Hash | null> => {
+      const getClient = getWalletClientForBetting ?? getWalletClient;
+      const walletClient = getClient ? await getClient() : null;
+      if (!walletClient?.account) {
+        throw new Error("Connect your Privy wallet to place a bet");
+      }
+      const amount = parseUnits(amountUsdc, 6);
+      if (amount === 0n) {
+        throw new Error("Bet amount must be greater than 0");
+      }
+      // 1. Approve USDC spend to the prediction factory
+      const approveHash = await walletClient.writeContract({
+        address: USDC_BASE_SEPOLIA as Address,
+        abi: ERC20_APPROVE_ABI,
+        functionName: "approve",
+        args: [PREDICTION_FACTORY_ADDRESS, amount],
+        chain: baseSepolia,
+        account: walletClient.account,
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      // 2. Place bet (contract transfers USDC from user)
+      const data = encodeFunctionData({
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: "placeBet",
+        args: [BigInt(predictionId), option, amount],
+      });
+      const gas = await publicClient.estimateGas({
+        account: walletClient.account,
+        to: PREDICTION_FACTORY_ADDRESS,
+        data,
+      });
+      const hash = await walletClient.writeContract({
+        address: PREDICTION_FACTORY_ADDRESS,
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: "placeBet",
+        args: [BigInt(predictionId), option, amount],
+        chain: baseSepolia,
+        account: walletClient.account,
+        gas: gas + BigInt(5000),
+      });
+      if (hash) {
+        await publicClient.waitForTransactionReceipt({ hash });
+        await fetchPredictions();
+      }
+      return hash;
+    },
+    [getWalletClient, getWalletClientForBetting, fetchPredictions]
+  );
+
+  const claimWinnings = useCallback(
+    async (predictionId: number): Promise<Hash | null> => {
+      const getClient = getWalletClientForBetting ?? getWalletClient;
+      const walletClient = getClient ? await getClient() : null;
+      if (!walletClient?.account) {
+        throw new Error("Connect your Privy wallet to claim winnings");
+      }
+      const data = encodeFunctionData({
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: "claimWinnings",
+        args: [BigInt(predictionId)],
+      });
+      try {
+        await publicClient.simulateContract({
+          account: walletClient.account,
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: "claimWinnings",
+          args: [BigInt(predictionId)],
+        });
+      } catch (err) {
+        if (err instanceof BaseError) {
+          const revertError = err.walk(
+            (e): e is ContractFunctionRevertedError => e instanceof ContractFunctionRevertedError
+          );
+          if (revertError) {
+            const errorName = revertError.data?.errorName;
+            const msg = revertErrorToMessage(typeof errorName === "string" ? errorName : undefined);
+            throw new Error(msg);
+          }
+        }
+        throw err;
+      }
+      const gas = await publicClient.estimateGas({
+        account: walletClient.account,
+        to: PREDICTION_FACTORY_ADDRESS,
+        data,
+      });
+      const hash = await walletClient.writeContract({
+        address: PREDICTION_FACTORY_ADDRESS,
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: "claimWinnings",
+        args: [BigInt(predictionId)],
+        chain: baseSepolia,
+        account: walletClient.account,
+        gas: gas + BigInt(5000),
+      });
+      if (hash) {
+        await publicClient.waitForTransactionReceipt({ hash });
+        await fetchPredictions();
+      }
+      return hash;
+    },
+    [getWalletClientForBetting, getWalletClient, fetchPredictions]
+  );
+
   return {
     predictions,
     loading,
@@ -223,8 +408,19 @@ export function usePredictions(
     lockPrediction,
     resolvePrediction,
     cancelPrediction,
+    placeBet,
+    claimWinnings,
     chainId: BASE_SEPOLIA_CHAIN_ID,
   };
+}
+
+export async function getPayout(predictionId: number, userAddress: Address): Promise<bigint> {
+  return publicClient.readContract({
+    address: PREDICTION_FACTORY_ADDRESS,
+    abi: PREDICTION_FACTORY_ABI,
+    functionName: "getPayout",
+    args: [BigInt(predictionId), userAddress],
+  }) as Promise<bigint>;
 }
 
 export async function checkCanManagePrediction(

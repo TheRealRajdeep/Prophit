@@ -50,7 +50,7 @@ function BellIcon() {
 export default function Header() {
   const { ready, authenticated, user, login, logout } = usePrivy();
   const { platformAddress, embeddedWalletAddress } = usePlatformWallet();
-  const { usdcBalance, loading, refetch: refetchBalance } = usePlatformBalance();
+  const { totalUsdBalance, loading, refetch: refetchBalance } = usePlatformBalance();
   const walletAddress = user?.wallet?.address as string | undefined;
   const [depositModalOpen, setDepositModalOpen] = useState(false);
 
@@ -157,7 +157,7 @@ export default function Header() {
                         onClick={() => setDepositModalOpen(true)}
                         className="rounded bg-bg-elevated px-3 py-1.5 text-sm font-medium text-white ring-1 ring-border-subtle hover:bg-bg-card hover:text-accent-cyan transition-colors"
                       >
-                        {loading ? "—" : `$${usdcBalance}`} <span className="text-text-muted">·</span> Deposit
+                        {loading ? "—" : `$${totalUsdBalance}`} <span className="text-text-muted">·</span> Deposit
                       </button>
                     </>
                   )}
