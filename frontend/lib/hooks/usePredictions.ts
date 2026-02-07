@@ -8,6 +8,7 @@ import {
   type Hash,
   encodeFunctionData,
   parseUnits,
+  formatUnits,
   BaseError,
   ContractFunctionRevertedError,
 } from "viem";
@@ -17,6 +18,7 @@ import {
   PREDICTION_FACTORY_ADDRESS,
   USDC_BASE_SEPOLIA,
   BASE_SEPOLIA_CHAIN_ID,
+  PREDICTION_FACTORY_DEPLOY_BLOCK,
 } from "@/lib/constants";
 import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
 import {
@@ -186,7 +188,7 @@ export function usePredictions(
     ): Promise<Hash | null> => {
       const walletClient = getWalletClient ? await getWalletClient() : null;
       if (!walletClient?.account) {
-        throw new Error("Connect a wallet to perform this action");
+        throw new Error("Connect your Privy wallet to perform this action");
       }
       type WriteArgs =
         | readonly [bigint]
@@ -304,41 +306,75 @@ export function usePredictions(
       if (amount === 0n) {
         throw new Error("Bet amount must be greater than 0");
       }
-      // 1. Approve USDC spend to the prediction factory
-      const approveHash = await walletClient.writeContract({
+      // 0. Check USDC balance on Base Sepolia (predictions use Base Sepolia only)
+      const balance = (await publicClient.readContract({
         address: USDC_BASE_SEPOLIA as Address,
         abi: ERC20_APPROVE_ABI,
-        functionName: "approve",
-        args: [PREDICTION_FACTORY_ADDRESS, amount],
-        chain: baseSepolia,
-        account: walletClient.account,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-      // 2. Place bet (contract transfers USDC from user)
-      const data = encodeFunctionData({
-        abi: PREDICTION_FACTORY_ABI,
-        functionName: "placeBet",
-        args: [BigInt(predictionId), option, amount],
-      });
-      const gas = await publicClient.estimateGas({
-        account: walletClient.account,
-        to: PREDICTION_FACTORY_ADDRESS,
-        data,
-      });
-      const hash = await walletClient.writeContract({
-        address: PREDICTION_FACTORY_ADDRESS,
-        abi: PREDICTION_FACTORY_ABI,
-        functionName: "placeBet",
-        args: [BigInt(predictionId), option, amount],
-        chain: baseSepolia,
-        account: walletClient.account,
-        gas: gas + BigInt(5000),
-      });
-      if (hash) {
-        await publicClient.waitForTransactionReceipt({ hash });
-        await fetchPredictions();
+        functionName: "balanceOf",
+        args: [walletClient.account.address],
+      })) as bigint;
+      if (balance < amount) {
+        const have = formatUnits(balance, 6);
+        const need = formatUnits(amount, 6);
+        throw new Error(
+          `Insufficient USDC on Base Sepolia. You need ${need} USDC but have ${have}. ` +
+            `Deposit USDC to your wallet on Base Sepolia (use the Transfer Crypto / Deposit button). ` +
+            `Note: Balance from other chains (e.g. Sepolia) cannot be used for predictions.`
+        );
       }
-      return hash;
+      try {
+        // 1. Approve USDC spend to the prediction factory
+        const approveHash = await walletClient.writeContract({
+          address: USDC_BASE_SEPOLIA as Address,
+          abi: ERC20_APPROVE_ABI,
+          functionName: "approve",
+          args: [PREDICTION_FACTORY_ADDRESS, amount],
+          chain: baseSepolia,
+          account: walletClient.account,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        // 2. Place bet (contract transfers USDC from user)
+        const data = encodeFunctionData({
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: "placeBet",
+          args: [BigInt(predictionId), option, amount],
+        });
+        const gas = await publicClient.estimateGas({
+          account: walletClient.account,
+          to: PREDICTION_FACTORY_ADDRESS,
+          data,
+        });
+        const hash = await walletClient.writeContract({
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: "placeBet",
+          args: [BigInt(predictionId), option, amount],
+          chain: baseSepolia,
+          account: walletClient.account,
+          gas: gas + BigInt(5000),
+        });
+        if (hash) {
+          await publicClient.waitForTransactionReceipt({ hash });
+          await fetchPredictions();
+        }
+        return hash;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.includes("transfer amount exceeds balance") ||
+          msg.includes("exceeds balance") ||
+          msg.includes("ERC20: transfer amount exceeds balance")
+        ) {
+          const have = formatUnits(balance, 6);
+          const need = formatUnits(amount, 6);
+          throw new Error(
+            `Insufficient USDC on Base Sepolia. You need ${need} USDC but have ${have}. ` +
+              `Deposit USDC to your wallet on Base Sepolia (use Transfer Crypto). ` +
+              `Your total balance may include funds on other chains—predictions use Base Sepolia only.`
+          );
+        }
+        throw err;
+      }
     },
     [getWalletClient, getWalletClientForBetting, fetchPredictions]
   );
@@ -421,6 +457,120 @@ export async function getPayout(predictionId: number, userAddress: Address): Pro
     functionName: "getPayout",
     args: [BigInt(predictionId), userAddress],
   }) as Promise<bigint>;
+}
+
+export type UserBetOutcome = "won" | "lost" | "no_bet";
+
+export async function getUserBetOutcome(
+  predictionId: number,
+  userAddress: Address,
+  winningOption: 1 | 2
+): Promise<{ outcome: UserBetOutcome; betOnOption: 1 | 2 | null; amount: bigint }> {
+  const [bet1, bet2] = await Promise.all([
+    publicClient.readContract({
+      address: PREDICTION_FACTORY_ADDRESS,
+      abi: PREDICTION_FACTORY_ABI,
+      functionName: "userBets",
+      args: [BigInt(predictionId), userAddress, 1],
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: PREDICTION_FACTORY_ADDRESS,
+      abi: PREDICTION_FACTORY_ABI,
+      functionName: "userBets",
+      args: [BigInt(predictionId), userAddress, 2],
+    }) as Promise<bigint>,
+  ]);
+  const winningBet = winningOption === 1 ? bet1 : bet2;
+  const losingBet = winningOption === 1 ? bet2 : bet1;
+  if (winningBet > 0n) {
+    return { outcome: "won", betOnOption: winningOption, amount: winningBet };
+  }
+  if (losingBet > 0n) {
+    return { outcome: "lost", betOnOption: (winningOption === 1 ? 2 : 1) as 1 | 2, amount: losingBet };
+  }
+  return { outcome: "no_bet", betOnOption: null, amount: 0n };
+}
+
+export type TopScorer = { address: Address; amount: bigint } | null;
+
+export async function getTopScorer(
+  predictionId: number,
+  winningOption: 1 | 2
+): Promise<TopScorer> {
+  const logs = await getBetPlacedLogs(predictionId);
+  const byUser = new Map<string, bigint>();
+  for (const log of logs) {
+    if (log.args.option !== winningOption || !log.args.user) continue;
+    const addr = log.args.user.toLowerCase();
+    const amt = log.args.amount ?? 0n;
+    byUser.set(addr, (byUser.get(addr) ?? 0n) + amt);
+  }
+  let top: TopScorer = null;
+  for (const [addr, amt] of byUser) {
+    if (!top || amt > top.amount) {
+      top = { address: addr as Address, amount: amt };
+    }
+  }
+  return top;
+}
+
+const EVENT_CHUNK_SIZE = 2000n; // RPCs often limit getLogs to ~2000 blocks
+
+async function getBetPlacedLogs(predictionId: number) {
+  const logs: Awaited<ReturnType<typeof publicClient.getContractEvents>> = [];
+  let fromBlock = PREDICTION_FACTORY_DEPLOY_BLOCK;
+  const toBlock = await publicClient.getBlockNumber();
+  while (fromBlock <= toBlock) {
+    const chunkTo = fromBlock + EVENT_CHUNK_SIZE > toBlock ? toBlock : fromBlock + EVENT_CHUNK_SIZE;
+    const chunk = await publicClient.getContractEvents({
+      address: PREDICTION_FACTORY_ADDRESS,
+      abi: PREDICTION_FACTORY_ABI,
+      eventName: "BetPlaced",
+      args: { predictionId: BigInt(predictionId) },
+      fromBlock,
+      toBlock: chunkTo,
+    });
+    logs.push(...chunk);
+    fromBlock = chunkTo + 1n;
+  }
+  return logs;
+}
+
+async function getPredictionCreatedLogs(predictionId: number) {
+  const logs: Awaited<ReturnType<typeof publicClient.getContractEvents>> = [];
+  let fromBlock = PREDICTION_FACTORY_DEPLOY_BLOCK;
+  const toBlock = await publicClient.getBlockNumber();
+  while (fromBlock <= toBlock) {
+    const chunkTo = fromBlock + EVENT_CHUNK_SIZE > toBlock ? toBlock : fromBlock + EVENT_CHUNK_SIZE;
+    const chunk = await publicClient.getContractEvents({
+      address: PREDICTION_FACTORY_ADDRESS,
+      abi: PREDICTION_FACTORY_ABI,
+      eventName: "PredictionCreated",
+      args: { predictionId: BigInt(predictionId) },
+      fromBlock,
+      toBlock: chunkTo,
+    });
+    logs.push(...chunk);
+    fromBlock = chunkTo + 1n;
+  }
+  return logs;
+}
+
+export async function getBiddersCount(predictionId: number): Promise<number> {
+  const logs = await getBetPlacedLogs(predictionId);
+  const unique = new Set<string>();
+  for (const log of logs) {
+    if (log.args.user) unique.add(log.args.user.toLowerCase());
+  }
+  return unique.size;
+}
+
+export async function getPredictionStartTime(predictionId: number): Promise<Date | null> {
+  const logs = await getPredictionCreatedLogs(predictionId);
+  const created = logs[0];
+  if (!created?.blockNumber) return null;
+  const block = await publicClient.getBlock({ blockNumber: created.blockNumber });
+  return block?.timestamp ? new Date(Number(block.timestamp) * 1000) : null;
 }
 
 export async function checkCanManagePrediction(

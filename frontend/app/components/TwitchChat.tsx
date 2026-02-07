@@ -5,6 +5,10 @@ import type { Address } from "viem";
 import {
   usePredictions,
   getPayout,
+  getTopScorer,
+  getUserBetOutcome,
+  getBiddersCount,
+  getPredictionStartTime,
   predictionStatusLabel,
   isLive,
   canLock,
@@ -13,6 +17,8 @@ import {
   usePlatformWallet,
   type Prediction,
 } from "@/lib/hooks";
+import { ensNameToUsername } from "@/lib/hooks/useEnsName";
+import { fetchEnsUsernameForAddress } from "./SetUsernameModal";
 
 // tmi.js types for message handler
 interface ChatTags {
@@ -36,6 +42,7 @@ interface ChatMessage {
   timestamp: number;
   isMod?: boolean;
   isSubscriber?: boolean;
+  isResolutionAnnouncement?: boolean;
 }
 
 const MAX_MESSAGES = 200;
@@ -184,6 +191,12 @@ function PrizeIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+/** Truncate address for display. */
+function truncateAddress(addr: string): string {
+  if (!addr || addr.length < 12) return addr;
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
 /** Format USDC amount (6 decimals) for display. */
 function formatUsdc(units: bigint): string {
   const usdc = Number(units) / 1e6;
@@ -297,7 +310,7 @@ function CreatePredictionForm({
   );
 }
 
-/** Stat row item for prediction detail card (icon + value, compact vertical layout) */
+/** Stat row item for prediction detail card (icon + value, compact inline) */
 function StatItem({
   icon: Icon,
   value,
@@ -306,9 +319,9 @@ function StatItem({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       <Icon className="h-4 w-4 shrink-0 text-blue-400/90" />
-      <span className="text-sm font-semibold text-amber-400">{value}</span>
+      <span className="whitespace-nowrap text-sm font-semibold text-amber-400">{value}</span>
     </div>
   );
 }
@@ -323,6 +336,7 @@ function RealPredictionCard({
   onPlaceBet,
   onClaimWinnings,
   userAddressForClaim,
+  onResolveComplete,
 }: {
   prediction: Prediction;
   canManage: boolean;
@@ -332,6 +346,7 @@ function RealPredictionCard({
   onPlaceBet?: (predictionId: number, option: 1 | 2, amountEth: string) => Promise<void>;
   onClaimWinnings?: (id: number) => Promise<void>;
   userAddressForClaim?: Address | null;
+  onResolveComplete?: (prediction: Prediction, winningOption: 1 | 2) => void;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [locking, setLocking] = useState(false);
@@ -343,6 +358,11 @@ function RealPredictionCard({
   const [amount1, setAmount1] = useState("1");
   const [amount2, setAmount2] = useState("1");
   const [betError, setBetError] = useState<string | null>(null);
+  const [userOutcome, setUserOutcome] = useState<{ outcome: "won" | "lost" | "no_bet"; betOnOption: 1 | 2 | null; amount: bigint } | null>(null);
+  const [topScorer, setTopScorer] = useState<{ address: Address; amount: bigint } | null>(null);
+  const [topScorerUsername, setTopScorerUsername] = useState<string | null>(null);
+  const [biddersCount, setBiddersCount] = useState<number | null>(null);
+  const [startTime, setStartTime] = useState<Date | null>(null);
 
   const total = Number(prediction.totalBetOption1 + prediction.totalBetOption2);
   const o1 = Number(prediction.totalBetOption1);
@@ -354,9 +374,6 @@ function RealPredictionCard({
   const showResolve = canManage && canResolve(prediction.status);
   const showReject = canManage && canCancel(prediction.status);
   const isOpen = prediction.status === 0;
-
-  // Odds: 1:X = total / optionPool (pari-mutuel)
-  const odds1 = total > 0 && o1 > 0 ? (total / o1).toFixed(2) : "—";
 
   const handlePlaceBet = async (option: 1 | 2) => {
     if (!onPlaceBet) return;
@@ -380,6 +397,7 @@ function RealPredictionCard({
     setResolving(true);
     try {
       await onResolve(prediction.id, option);
+      onResolveComplete?.(prediction, option);
     } finally {
       setResolving(false);
     }
@@ -416,6 +434,61 @@ function RealPredictionCard({
     });
     return () => { cancelled = true; };
   }, [prediction.id, prediction.status, userAddressForClaim]);
+
+  // Fetch user outcome and top scorer when prediction is resolved
+  useEffect(() => {
+    if (prediction.status !== 2 || !prediction.winningOption) {
+      setUserOutcome(null);
+      setTopScorer(null);
+      setTopScorerUsername(null);
+      return;
+    }
+    const winning = prediction.winningOption as 1 | 2;
+    let cancelled = false;
+    Promise.all([
+      userAddressForClaim ? getUserBetOutcome(prediction.id, userAddressForClaim, winning) : null,
+      getTopScorer(prediction.id, winning),
+    ]).then(([outcome, top]) => {
+      if (!cancelled) {
+        setUserOutcome(outcome ?? null);
+        setTopScorer(top);
+        setTopScorerUsername(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [prediction.id, prediction.status, prediction.winningOption, userAddressForClaim]);
+
+  // Fetch username for top scorer when available
+  useEffect(() => {
+    if (!topScorer) {
+      setTopScorerUsername(null);
+      return;
+    }
+    let cancelled = false;
+    fetchEnsUsernameForAddress(topScorer.address).then((raw) => {
+      if (!cancelled && raw) {
+        setTopScorerUsername(ensNameToUsername(raw));
+      } else if (!cancelled) {
+        setTopScorerUsername(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [topScorer?.address]);
+
+  // Fetch bidders count and start time for stats
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getBiddersCount(prediction.id),
+      getPredictionStartTime(prediction.id),
+    ]).then(([count, time]) => {
+      if (!cancelled) {
+        setBiddersCount(count);
+        setStartTime(time);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [prediction.id]);
 
   const handleClaim = async () => {
     if (!onClaimWinnings) return;
@@ -527,17 +600,31 @@ function RealPredictionCard({
                 <span>{prediction.option2} {formatUsdc(prediction.totalBetOption2)}</span>
               </div>
 
-              {/* Stats row (refer to second image: time, odds, participants, volume) */}
-              <div className="mt-4 grid grid-cols-2 gap-3 rounded-lg border border-zinc-700 bg-zinc-800/60 p-3">
-                <StatItem icon={ClockIcon} value={live ? "Live" : "Closed"} />
-                <StatItem icon={TrophyIcon} value={`1:${odds1}`} />
-                <StatItem icon={PeopleIcon} value="—" />
+              {/* Stats row: start time, bidders, volume — all on one line */}
+              <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border border-zinc-700 bg-zinc-800/60 p-3">
+                <StatItem
+                  icon={ClockIcon}
+                  value={
+                    startTime
+                      ? startTime.toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                      : "—"
+                  }
+                />
+                <StatItem icon={PeopleIcon} value={biddersCount !== null ? String(biddersCount) : "—"} />
                 <StatItem icon={PrizeIcon} value={formatUsdc(prediction.totalBetOption1 + prediction.totalBetOption2)} />
               </div>
 
               {/* Vote inputs - one per option */}
               {isOpen && onPlaceBet && !canManage && (
                 <div className="mt-4 space-y-3">
+                  <p className="text-xs text-zinc-500">
+                    Uses USDC on Base Sepolia. Deposit via Transfer Crypto if needed.
+                  </p>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -626,6 +713,30 @@ function RealPredictionCard({
                     >
                       {rejecting ? "Rejecting…" : "Reject (refund all)"}
                     </button>
+                  )}
+                </div>
+              )}
+
+              {/* User outcome and top scorer for resolved predictions */}
+              {isResolved && (
+                <div className="mt-4 space-y-3">
+                  {userOutcome && userOutcome.outcome === "won" && (
+                    <p className="text-sm font-semibold text-emerald-400">
+                      You won! Your bet on {prediction.winningOption === 1 ? prediction.option1 : prediction.option2} paid off.
+                    </p>
+                  )}
+                  {userOutcome && userOutcome.outcome === "lost" && (
+                    <p className="text-sm font-semibold text-red-400">
+                      You lost — your bet was on {userOutcome.betOnOption === 1 ? prediction.option1 : prediction.option2} ({formatUsdc(userOutcome.amount)}).
+                    </p>
+                  )}
+                  {topScorer && (
+                    <div className="rounded-lg border border-amber-600/50 bg-amber-900/20 p-3">
+                      <p className="text-xs font-medium text-amber-400/90 uppercase tracking-wider">Top scorer</p>
+                      <p className="mt-0.5 text-sm font-semibold text-amber-300">
+                        {topScorerUsername ?? truncateAddress(topScorer.address)} with {formatUsdc(topScorer.amount)}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -795,10 +906,38 @@ export default function TwitchChat({
 }: TwitchChatProps) {
   const [activeTab, setActiveTab] = useState<"chat" | "predictions">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [resolutionAnnouncements, setResolutionAnnouncements] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<unknown>(null);
+
+  const handleResolveComplete = useCallback(
+    async (prediction: Prediction, winningOption: 1 | 2) => {
+      const winningLabel = winningOption === 1 ? prediction.option1 : prediction.option2;
+      const top = await getTopScorer(prediction.id, winningOption);
+      let topDisplay = "";
+      if (top) {
+        const raw = await fetchEnsUsernameForAddress(top.address);
+        topDisplay = raw ? ensNameToUsername(raw) : truncateAddress(top.address);
+      }
+      const topMsg = top
+        ? ` Top scorer: ${topDisplay} with ${formatUsdc(top.amount)}.`
+        : "";
+      const announcement: ChatMessage = {
+        id: `resolution-${prediction.id}-${Date.now()}`,
+        username: "system",
+        displayName: "Prediction",
+        color: "#F59E0B",
+        message: `Prediction resolved! Winner: "${winningLabel}".${topMsg}`,
+        timestamp: Date.now(),
+        isResolutionAnnouncement: true,
+      };
+      setResolutionAnnouncements((prev) => [...prev.slice(-4), announcement]);
+      setActiveTab("chat");
+    },
+    []
+  );
 
   const { platformAddress } = usePlatformWallet();
   const {
@@ -976,30 +1115,35 @@ export default function TwitchChat({
               {errorMessage ?? "Could not connect to chat."}
             </p>
           )}
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className="group flex flex-wrap items-baseline gap-1.5 py-0.5 text-sm leading-snug wrap-break-word"
-            >
-              <span
-                className="shrink-0 font-semibold"
-                style={{ color: m.color || DEFAULT_USER_COLOR }}
+          {[...resolutionAnnouncements, ...messages]
+            .sort((a, b) => a.timestamp - b.timestamp)
+            .map((m) => (
+              <div
+                key={m.id}
+                className={`group flex flex-wrap items-baseline gap-1.5 py-0.5 text-sm leading-snug wrap-break-word ${m.isResolutionAnnouncement ? "rounded-lg border border-amber-600/40 bg-amber-900/30 px-2 py-1.5" : ""
+                  }`}
               >
-                {m.displayName}
-              </span>
-              {m.isMod && (
-                <span className="rounded bg-emerald-600/80 px-1 text-[10px] font-medium text-white">
-                  MOD
+                <span
+                  className="shrink-0 font-semibold"
+                  style={{ color: m.color || DEFAULT_USER_COLOR }}
+                >
+                  {m.isResolutionAnnouncement ? "🏆" : m.displayName}
                 </span>
-              )}
-              {m.isSubscriber && !m.isMod && (
-                <span className="rounded bg-purple-600/80 px-1 text-[10px] font-medium text-white">
-                  SUB
+                {m.isResolutionAnnouncement ? null : m.isMod && (
+                  <span className="rounded bg-emerald-600/80 px-1 text-[10px] font-medium text-white">
+                    MOD
+                  </span>
+                )}
+                {m.isResolutionAnnouncement ? null : m.isSubscriber && !m.isMod && (
+                  <span className="rounded bg-purple-600/80 px-1 text-[10px] font-medium text-white">
+                    SUB
+                  </span>
+                )}
+                <span className={m.isResolutionAnnouncement ? "text-amber-200 font-medium" : "text-zinc-300"}>
+                  {m.message}
                 </span>
-              )}
-              <span className="text-zinc-300">{m.message}</span>
-            </div>
-          ))}
+              </div>
+            ))}
         </div>
       ) : (
         <div
@@ -1035,6 +1179,7 @@ export default function TwitchChat({
                   onPlaceBet={async (id, option, amount) => { await placeBet(id, option, amount); }}
                   onClaimWinnings={async (id) => { await claimWinnings(id); }}
                   userAddressForClaim={platformAddress}
+                  onResolveComplete={handleResolveComplete}
                 />
               ))
             )

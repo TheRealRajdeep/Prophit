@@ -29,8 +29,9 @@ export default function StreamWithPredictions({
   streamInfo,
 }: StreamWithPredictionsProps) {
   const { wallets } = useWallets();
-  const { metamaskAddress, platformAddress, ensurePlatformWallet } = usePlatformWallet();
-  const currentAddress = (metamaskAddress ?? platformAddress) ?? null;
+  const { platformAddress, ensurePlatformWallet } = usePlatformWallet();
+  // Use embedded wallet for all prediction operations (create, lock, resolve, cancel, bet, claim)
+  const currentAddress = platformAddress ?? null;
 
   const [streamerAddress, setStreamerAddress] = useState<Address | null>(null);
   const [canManage, setCanManage] = useState(false);
@@ -63,7 +64,7 @@ export default function StreamWithPredictions({
         }
         const user = await userRes.json();
         const isStreamer =
-          user?.metamaskAddress?.toLowerCase() === addr?.toLowerCase();
+          user?.privyAddress?.toLowerCase() === addr?.toLowerCase();
         const modChannels: string[] = Array.isArray(user?.moderatorsFor)
           ? user.moderatorsFor
           : [];
@@ -119,30 +120,8 @@ export default function StreamWithPredictions({
     []
   );
 
-  const getWalletClient = useCallback(async (): Promise<WalletClient | null> => {
-    const list = wallets ?? [];
-    // When canManage: use streamerAddress so we match the contract (streamer is stored on-chain).
-    // Otherwise use currentAddress (moderator case).
-    const requiredAddress =
-      streamerAddress && canManage
-        ? streamerAddress
-        : (currentAddress as Address | null);
-    const w = requiredAddress
-      ? (list as { address?: string }[]).find(
-        (x) => x?.address?.toLowerCase() === requiredAddress.toLowerCase()
-      )
-      : list[0];
-    if (requiredAddress && !w && canManage) {
-      throw new Error(
-        `Connect the wallet you registered with (${requiredAddress.slice(0, 6)}…${requiredAddress.slice(-4)}) to manage predictions.`
-      );
-    }
-    const target = (w ?? list[0]) as { getEthereumProvider?: () => Promise<unknown>; address?: string; switchChain?: (chainId: number) => Promise<void> } | undefined;
-    return createWalletClientFromTarget(target);
-  }, [wallets, streamerAddress, currentAddress, canManage, createWalletClientFromTarget]);
-
-  /** For betting: always use the Privy embedded wallet so ETH is deducted from the user's Privy balance. */
-  const getWalletClientForBetting = useCallback(async (): Promise<WalletClient | null> => {
+  /** For all prediction operations (create, lock, resolve, cancel, bet, claim): use embedded wallet. */
+  const getWalletClientForOperations = useCallback(async (): Promise<WalletClient | null> => {
     if (!platformAddress) return null;
     await ensurePlatformWallet();
     const list = wallets ?? [];
@@ -168,8 +147,8 @@ export default function StreamWithPredictions({
         className="h-full"
         streamerAddress={streamerAddress}
         canManagePredictions={canManage && !!streamerAddress}
-        getWalletClient={getWalletClient}
-        getWalletClientForBetting={getWalletClientForBetting}
+        getWalletClient={getWalletClientForOperations}
+        getWalletClientForBetting={getWalletClientForOperations}
       />
     </div>
   );

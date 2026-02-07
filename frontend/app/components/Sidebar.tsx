@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useOngoingPredictions } from "@/lib/hooks";
 
 function ChevronLeftIcon() {
   return (
@@ -29,18 +30,10 @@ function formatViewers(v: number): string {
   return String(v);
 }
 
-// Placeholder ongoing predictions – replace with real data from backend
-const ONGOING_PREDICTIONS = [
-  { emoji: "🎪", name: "Prediction 1", channelName: "Channel A", prices: "0.42/0.58" },
-  { emoji: "⚡", name: "Prediction 2", channelName: "Channel B", prices: "0.65/0.35" },
-  { emoji: "🌟", name: "Prediction 3", channelName: "Channel A", prices: "0.28/0.72" },
-  { emoji: "🔥", name: "Prediction 4", channelName: "Channel C", prices: "0.51/0.49" },
-  { emoji: "💎", name: "Prediction 5", channelName: "Channel B", prices: "0.33/0.67" },
-];
-
 export default function Sidebar() {
   const [streams, setStreams] = useState<LiveStreamItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const { predictions: ongoingPredictions, loading: predictionsLoading } = useOngoingPredictions(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,25 +105,39 @@ export default function Sidebar() {
 
           <div className="px-2">
             <h3 className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-accent">Ongoing Predictions</h3>
-            <ul className="space-y-0.5" role="list">
-              {ONGOING_PREDICTIONS.map((pred, i) => (
-                <li key={i}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-bg-elevated hover:ring-1 hover:ring-border-subtle transition-colors"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-base ring-1 ring-border-subtle" aria-hidden>
-                      {pred.emoji}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-white">{pred.name}</span>
-                      <span className="block truncate text-xs text-text-muted">{pred.channelName}</span>
-                    </div>
-                    <span className="shrink-0 text-xs text-accent-warm font-medium">{pred.prices}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {predictionsLoading ? (
+              <p className="px-2 text-xs text-text-muted">Loading…</p>
+            ) : ongoingPredictions.length === 0 ? (
+              <p className="px-2 text-xs text-text-muted">No open predictions</p>
+            ) : (
+              <ul className="space-y-0.5" role="list">
+                {ongoingPredictions.map((pred) => (
+                  <li key={pred.id}>
+                    <Link
+                      href={`/stream/${encodeURIComponent(pred.channel)}`}
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-bg-elevated hover:ring-1 hover:ring-border-subtle transition-colors"
+                    >
+                      {pred.profileImageUrl ? (
+                        <img
+                          src={pred.profileImageUrl}
+                          alt=""
+                          className="h-8 w-8 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-elevated text-base ring-1 ring-border-subtle" aria-hidden>
+                          🎮
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-white">{pred.title}</span>
+                        <span className="block truncate text-xs text-text-muted">{pred.channelName}</span>
+                      </div>
+                      <span className="shrink-0 text-xs text-accent-warm font-medium">{pred.prices}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>

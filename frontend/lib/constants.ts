@@ -14,6 +14,9 @@ export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const PREDICTION_FACTORY_ADDRESS =
   "0x2714A0A6c4a35E625dcb0EAF27f04dDD7C67F27B" as const;
 
+/** Block number when PredictionFactoryUSDC was deployed on Base Sepolia (for event queries). */
+export const PREDICTION_FACTORY_DEPLOY_BLOCK = 37360076n;
+
 /** USDC on Base Sepolia (for prediction betting). */
 export const USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 

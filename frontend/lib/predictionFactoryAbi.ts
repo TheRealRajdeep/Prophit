@@ -110,6 +110,40 @@ export const PREDICTION_FACTORY_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    inputs: [
+      { internalType: "uint256", name: "predictionId", type: "uint256" },
+      { internalType: "address", name: "account", type: "address" },
+      { internalType: "uint8", name: "option", type: "uint8" },
+    ],
+    name: "userBets",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint256", name: "predictionId", type: "uint256" },
+      { indexed: true, internalType: "address", name: "streamer", type: "address" },
+      { indexed: false, internalType: "string", name: "title", type: "string" },
+      { indexed: false, internalType: "string", name: "option1", type: "string" },
+      { indexed: false, internalType: "string", name: "option2", type: "string" },
+    ],
+    name: "PredictionCreated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "uint256", name: "predictionId", type: "uint256" },
+      { indexed: true, internalType: "address", name: "user", type: "address" },
+      { indexed: false, internalType: "uint8", name: "option", type: "uint8" },
+      { indexed: false, internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "BetPlaced",
+    type: "event",
+  },
 ] as const;
 
 export type PredictionStatus = 0 | 1 | 2 | 3; // Open, Locked, Resolved, Cancelled

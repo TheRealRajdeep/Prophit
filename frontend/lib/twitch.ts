@@ -131,6 +131,26 @@ async function getUser(login: string): Promise<TwitchUser | null> {
 }
 
 /**
+ * Get profile image URLs for multiple channels by login name.
+ * Returns a map of login (lowercase) -> profile_image_url.
+ */
+export async function getProfileImagesByLogin(logins: string[]): Promise<Record<string, string | null>> {
+    const unique = [...new Set(logins.map((l) => l.trim().toLowerCase()).filter(Boolean))];
+    if (unique.length === 0) return {};
+    const query = unique.map((l) => `login=${encodeURIComponent(l)}`).join("&");
+    const data = await twitchFetch<{ data: TwitchUser[] }>(`/users?${query}`);
+    const result: Record<string, string | null> = {};
+    for (const login of unique) {
+        result[login] = null;
+    }
+    for (const u of data.data || []) {
+        const key = u.login.toLowerCase();
+        result[key] = u.profile_image_url ?? null;
+    }
+    return result;
+}
+
+/**
  * Get live stream info for a channel
  */
 async function getStream(login: string): Promise<TwitchStream | null> {
