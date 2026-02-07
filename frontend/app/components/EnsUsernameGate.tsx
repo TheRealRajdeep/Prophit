@@ -14,6 +14,7 @@ import { fetchEnsStatusForAddress, SetUsernameModal } from "./SetUsernameModal";
 export function EnsUsernameGate() {
   const { user } = usePrivy();
   const { platformAddress } = usePlatformWallet();
+  console.log("platformAddress", platformAddress);
   const walletAddress = user?.wallet?.address as string | null | undefined;
   const addressForGate = platformAddress ?? walletAddress ?? null;
   const ensNameOnChain = useEnsName(addressForGate);
@@ -27,6 +28,7 @@ export function EnsUsernameGate() {
     }
     // If they already have an ENS name on-chain, no need to prompt
     if (ensNameOnChain) {
+      console.log("ensNameOnChain", ensNameOnChain);
       setShowModal(false);
       setLoading(false);
       return;
