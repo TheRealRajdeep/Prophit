@@ -1,12 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createWalletClient, custom, type WalletClient, type Address } from "viem";
+import { createPublicClient, createWalletClient, custom, http, type WalletClient, type Address } from "viem";
 import { baseSepolia } from "viem/chains";
 import { useWallets } from "@privy-io/react-auth";
 import { usePlatformWallet } from "@/lib/hooks";
 import { apiStreamerUrl, apiUserUrl, fetchApi } from "@/lib/api";
+import { PREDICTION_FACTORY_ADDRESS } from "@/lib/constants";
+import { PREDICTION_FACTORY_ABI } from "@/lib/predictionFactoryAbi";
 import TwitchChat from "./TwitchChat";
+
+const publicClient = createPublicClient({
+  chain: baseSepolia,
+  transport: http(),
+});
 
 type StreamWithPredictionsProps = {
   channel: string;
@@ -59,7 +66,21 @@ export default function StreamWithPredictions({
         const userRes = await fetchApi(apiUserUrl(currentAddress));
         if (cancelled) return;
         if (!userRes.ok) {
-          setCanManage(addr.toLowerCase() === currentAddress.toLowerCase());
+          const isStreamerDirect = addr.toLowerCase() === currentAddress.toLowerCase();
+          let isOnChainMod = false;
+          if (!isStreamerDirect) {
+            try {
+              isOnChainMod = await publicClient.readContract({
+                address: PREDICTION_FACTORY_ADDRESS,
+                abi: PREDICTION_FACTORY_ABI,
+                functionName: "streamerModerators",
+                args: [addr, currentAddress],
+              });
+            } catch {
+              /* ignore */
+            }
+          }
+          setCanManage(isStreamerDirect || isOnChainMod);
           return;
         }
         const user = await userRes.json();
@@ -68,10 +89,22 @@ export default function StreamWithPredictions({
         const modChannels: string[] = Array.isArray(user?.moderatorsFor)
           ? user.moderatorsFor
           : [];
-        const isMod = modChannels.some(
+        const isModFromBackend = modChannels.some(
           (c: string) => c?.trim().toLowerCase() === channel.trim().toLowerCase()
         );
-        setCanManage(isStreamer || isMod);
+        // Also check on-chain moderator status (streamer adds via addStreamerModerator)
+        let isOnChainModerator = false;
+        try {
+          isOnChainModerator = await publicClient.readContract({
+            address: PREDICTION_FACTORY_ADDRESS,
+            abi: PREDICTION_FACTORY_ABI,
+            functionName: "streamerModerators",
+            args: [addr, currentAddress],
+          });
+        } catch {
+          // Ignore RPC errors; fall back to backend-only check
+        }
+        setCanManage(isStreamer || isModFromBackend || isOnChainModerator);
       } catch {
         if (!cancelled) {
           setStreamerAddress(null);

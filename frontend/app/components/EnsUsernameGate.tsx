@@ -14,9 +14,9 @@ import { fetchEnsStatusForAddress, SetUsernameModal } from "./SetUsernameModal";
  */
 export function EnsUsernameGate() {
   const { user } = usePrivy();
-  const { embeddedWalletAddress } = usePlatformWallet();
+  const { embeddedWalletAddress, platformAddress } = usePlatformWallet();
   const connectedWalletAddress = user?.wallet?.address as string | null | undefined;
-  const addressForGate = embeddedWalletAddress ?? null;
+  const addressForGate = platformAddress ?? null;
   const { ensName, isLoading } = useEnsName(addressForGate);
   const ensNameConnected = useEnsName(
     connectedWalletAddress && connectedWalletAddress.toLowerCase() !== embeddedWalletAddress?.toLowerCase()

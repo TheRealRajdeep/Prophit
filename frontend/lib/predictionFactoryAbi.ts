@@ -38,6 +38,16 @@ export const PREDICTION_FACTORY_ABI = [
   },
   {
     inputs: [
+      { internalType: "address", name: "streamer", type: "address" },
+      { internalType: "address", name: "moderator", type: "address" },
+    ],
+    name: "streamerModerators",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
       { internalType: "uint256", name: "predictionId", type: "uint256" },
       { internalType: "address", name: "account", type: "address" },
     ],
