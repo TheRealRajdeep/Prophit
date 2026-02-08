@@ -49,7 +49,7 @@ Prophit brings betting to Twitch. Streamers create prediction markets (e.g. *"Wi
 
 - **Node.js** 18+
 - **PostgreSQL** (for user data, chat, streamer registry)
-- **API keys**: [Privy](https://dashboard.privy.io), [Twitch](https://dev.twitch.tv/console), optionally [Self](https://docs.self.xyz) for wallet linking
+- **API keys**: [Privy](https://dashboard.privy.io), [Twitch](https://dev.twitch.tv/console)
 
 ### 1. Clone & Install
 
@@ -72,7 +72,6 @@ NEXT_PUBLIC_PRIVY_APP_ID=your-privy-app-id
 NEXT_PUBLIC_PRIVY_CLIENT_ID=your-privy-client-id
 TWITCH_CLIENT_ID=your-twitch-client-id
 TWITCH_CLIENT_SECRET=your-twitch-client-secret
-# Optional: NEXT_PUBLIC_SELF_* for wallet linking
 ```
 
 **Backend** — create `backend/.env`:
@@ -124,7 +123,6 @@ npx hardhat ignition deploy ./ignition/modules/PredictionFactoryUSDC.ts --networ
 | `TWITCH_CLIENT_ID` | Twitch API client ID |
 | `TWITCH_CLIENT_SECRET` | Twitch API secret |
 | `DATABASE_URL` | PostgreSQL connection string |
-| `NEXT_PUBLIC_SELF_*` | Self.xyz (optional, for wallet linking) |
 
 ---
 
