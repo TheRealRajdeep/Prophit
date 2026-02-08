@@ -691,11 +691,11 @@ export default function CustomChat({
                   key={p.id}
                   prediction={p}
                   canManage={canManagePredictions}
-                  onLock={async (id) => await lockPrediction(id)}
-                  onResolve={async (id, option) => await resolvePrediction(id, option)}
-                  onReject={async (id) => await cancelPrediction(id)}
-                  onPlaceBet={async (id, option, amount) => await placeBet(id, option, amount)}
-                  onClaimWinnings={async (id) => await claimWinnings(id)}
+                  onLock={async (id) => { await lockPrediction(id); }}
+                  onResolve={async (id, option) => { await resolvePrediction(id, option); }}
+                  onReject={async (id) => { await cancelPrediction(id); }}
+                  onPlaceBet={async (id, option, amount) => { await placeBet(id, option, amount); }}
+                  onClaimWinnings={async (id) => { await claimWinnings(id); }}
                   userAddressForClaim={platformAddress}
                   onResolveComplete={handleResolveComplete}
                 />

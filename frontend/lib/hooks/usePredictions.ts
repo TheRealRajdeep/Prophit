@@ -246,7 +246,7 @@ export function usePredictions(
           const revertError = err.walk(
             (e): e is ContractFunctionRevertedError => e instanceof ContractFunctionRevertedError
           );
-          if (revertError) {
+          if (revertError instanceof ContractFunctionRevertedError) {
             const errorName = revertError.data?.errorName;
             const msg = revertErrorToMessage(typeof errorName === "string" ? errorName : undefined);
             throw new Error(msg);
@@ -444,7 +444,7 @@ export function usePredictions(
           const revertError = err.walk(
             (e): e is ContractFunctionRevertedError => e instanceof ContractFunctionRevertedError
           );
-          if (revertError) {
+          if (revertError instanceof ContractFunctionRevertedError) {
             const errorName = revertError.data?.errorName;
             const msg = revertErrorToMessage(typeof errorName === "string" ? errorName : undefined);
             throw new Error(msg);
@@ -564,6 +564,8 @@ export async function getUserBetOutcome(
 
 export type TopScorer = { address: Address; amount: bigint } | null;
 
+type BetPlacedArgs = { predictionId: bigint; user: string; option: number; amount?: bigint };
+
 export async function getTopScorer(
   predictionId: number,
   winningOption: 1 | 2
@@ -571,9 +573,10 @@ export async function getTopScorer(
   const logs = await getBetPlacedLogs(predictionId);
   const byUser = new Map<string, bigint>();
   for (const log of logs) {
-    if (log.args.option !== winningOption || !log.args.user) continue;
-    const addr = log.args.user.toLowerCase();
-    const amt = log.args.amount ?? 0n;
+    const args = (log as { args?: BetPlacedArgs }).args;
+    if (!args || args.option !== winningOption || !args.user) continue;
+    const addr = args.user.toLowerCase();
+    const amt = args.amount ?? 0n;
     byUser.set(addr, (byUser.get(addr) ?? 0n) + amt);
   }
   let top: TopScorer = null;
@@ -631,7 +634,8 @@ export async function getBiddersCount(predictionId: number): Promise<number> {
   const logs = await getBetPlacedLogs(predictionId);
   const unique = new Set<string>();
   for (const log of logs) {
-    if (log.args.user) unique.add(log.args.user.toLowerCase());
+    const args = (log as { args?: BetPlacedArgs }).args;
+    if (args?.user) unique.add(args.user.toLowerCase());
   }
   return unique.size;
 }

@@ -93,7 +93,7 @@ export function useOngoingPredictions(limit = 10) {
   const [predictions, setPredictions] = useState<OngoingPredictionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetch = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const [rawList, channelMap] = await Promise.all([
@@ -145,14 +145,14 @@ export function useOngoingPredictions(limit = 10) {
   }, [limit]);
 
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    refresh();
+  }, [refresh]);
 
   // Poll for updates (every 10s)
   useEffect(() => {
-    const interval = setInterval(fetch, 10_000);
+    const interval = setInterval(refresh, 10_000);
     return () => clearInterval(interval);
-  }, [fetch]);
+  }, [refresh]);
 
-  return { predictions, loading, refetch: fetch };
+  return { predictions, loading, refetch: refresh };
 }
