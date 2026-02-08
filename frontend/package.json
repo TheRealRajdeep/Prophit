@@ -16,6 +16,7 @@
     "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "socket.io-client": "^4.8.3",
     "tmi.js": "^1.8.5",
     "viem": "^2.45.1",
     "websocket-ts": "^2.2.1"

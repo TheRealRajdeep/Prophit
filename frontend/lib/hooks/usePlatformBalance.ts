@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPublicClient, formatUnits, http } from "viem";
 import { baseSepolia, sepolia } from "viem/chains";
-import { DEPOSIT_TOKENS_BY_CHAIN, type DepositTokenId } from "@/lib/constants";
+import { BASE_SEPOLIA_RPC_URL, DEPOSIT_TOKENS_BY_CHAIN, type DepositTokenId } from "@/lib/constants";
 import { usePlatformWallet } from "./usePlatformWallet";
 
 const balanceOfAbi = [
@@ -17,7 +17,7 @@ const balanceOfAbi = [
 ] as const;
 
 const clients = {
-  [baseSepolia.id]: createPublicClient({ chain: baseSepolia, transport: http() }),
+  [baseSepolia.id]: createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC_URL, { batch: true }) }),
   [sepolia.id]: createPublicClient({ chain: sepolia, transport: http() }),
 };
 

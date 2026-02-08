@@ -1,19 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createPublicClient, createWalletClient, custom, http, type WalletClient, type Address } from "viem";
+import { createWalletClient, custom, type WalletClient, type Address } from "viem";
 import { baseSepolia } from "viem/chains";
 import { useWallets } from "@privy-io/react-auth";
 import { usePlatformWallet } from "@/lib/hooks";
 import { apiStreamerUrl, apiUserUrl, fetchApi } from "@/lib/api";
-import { PREDICTION_FACTORY_ADDRESS } from "@/lib/constants";
-import { PREDICTION_FACTORY_ABI } from "@/lib/predictionFactoryAbi";
-import TwitchChat from "./TwitchChat";
-
-const publicClient = createPublicClient({
-  chain: baseSepolia,
-  transport: http(),
-});
+import CustomChat from "./CustomChat";
 
 type StreamWithPredictionsProps = {
   channel: string;
@@ -66,25 +59,11 @@ export default function StreamWithPredictions({
         const userRes = await fetchApi(apiUserUrl(currentAddress));
         if (cancelled) return;
         if (!userRes.ok) {
-          const isStreamerDirect = addr.toLowerCase() === currentAddress.toLowerCase();
-          let isOnChainMod = false;
-          if (!isStreamerDirect) {
-            try {
-              isOnChainMod = await publicClient.readContract({
-                address: PREDICTION_FACTORY_ADDRESS,
-                abi: PREDICTION_FACTORY_ABI,
-                functionName: "streamerModerators",
-                args: [addr, currentAddress],
-              });
-            } catch {
-              /* ignore */
-            }
-          }
-          setCanManage(isStreamerDirect || isOnChainMod);
+          setCanManage(false);
           return;
         }
         const user = await userRes.json();
-        const isStreamer =
+        const isStreamerUser =
           user?.privyAddress?.toLowerCase() === addr?.toLowerCase();
         const modChannels: string[] = Array.isArray(user?.moderatorsFor)
           ? user.moderatorsFor
@@ -92,19 +71,8 @@ export default function StreamWithPredictions({
         const isModFromBackend = modChannels.some(
           (c: string) => c?.trim().toLowerCase() === channel.trim().toLowerCase()
         );
-        // Also check on-chain moderator status (streamer adds via addStreamerModerator)
-        let isOnChainModerator = false;
-        try {
-          isOnChainModerator = await publicClient.readContract({
-            address: PREDICTION_FACTORY_ADDRESS,
-            abi: PREDICTION_FACTORY_ABI,
-            functionName: "streamerModerators",
-            args: [addr, currentAddress],
-          });
-        } catch {
-          // Ignore RPC errors; fall back to backend-only check
-        }
-        setCanManage(isStreamer || isModFromBackend || isOnChainModerator);
+        // Use backend DB only for moderator check
+        setCanManage(isStreamerUser || isModFromBackend);
       } catch {
         if (!cancelled) {
           setStreamerAddress(null);
@@ -175,11 +143,14 @@ export default function StreamWithPredictions({
 
   return (
     <div className={`relative h-full w-full overflow-hidden ${className ?? ""}`}>
-      <TwitchChat
+      <CustomChat
         channel={channel}
         className="h-full"
         streamerAddress={streamerAddress}
+        streamerDisplayName={streamInfo?.displayName}
+        moderatorAddresses={[]}
         canManagePredictions={canManage && !!streamerAddress}
+        canAddModerators={!!(platformAddress && streamerAddress && platformAddress.toLowerCase() === streamerAddress.toLowerCase())}
         getWalletClient={getWalletClientForOperations}
         getWalletClientForBetting={getWalletClientForOperations}
       />

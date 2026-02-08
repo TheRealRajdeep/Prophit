@@ -3,13 +3,13 @@
 import { createPublicClient, http } from "viem";
 import { baseSepolia } from "viem/chains";
 import { useCallback, useEffect, useState } from "react";
-import { PREDICTION_FACTORY_ADDRESS } from "@/lib/constants";
+import { PREDICTION_FACTORY_ADDRESS, BASE_SEPOLIA_RPC_URL } from "@/lib/constants";
 import { PREDICTION_FACTORY_ABI, type PredictionStatus } from "@/lib/predictionFactoryAbi";
 import { fetchApi, getApiUrl } from "@/lib/api";
 
 const publicClient = createPublicClient({
   chain: baseSepolia,
-  transport: http(),
+  transport: http(BASE_SEPOLIA_RPC_URL, { batch: true }),
 });
 
 const STATUS_OPEN = 0;
@@ -52,23 +52,31 @@ async function fetchAllPredictions(): Promise<RawPrediction[]> {
   })) as bigint;
   const n = Number(nextId);
   const list: RawPrediction[] = [];
-  for (let i = 0; i < n; i++) {
-    const row = await publicClient.readContract({
-      address: PREDICTION_FACTORY_ADDRESS,
-      abi: PREDICTION_FACTORY_ABI,
-      functionName: "predictions",
-      args: [BigInt(i)],
-    }) as readonly [bigint, string, string, string, string, bigint, bigint, number, number, bigint];
-    list.push({
-      id: i,
-      streamer: (row[1] as string).toLowerCase(),
-      title: row[2],
-      option1: row[3],
-      option2: row[4],
-      totalBetOption1: row[5],
-      totalBetOption2: row[6],
-      status: row[7] as PredictionStatus,
+  if (n > 0) {
+    const predictionRows = await publicClient.multicall({
+      contracts: Array.from({ length: n }, (_, i) => ({
+        address: PREDICTION_FACTORY_ADDRESS,
+        abi: PREDICTION_FACTORY_ABI,
+        functionName: "predictions" as const,
+        args: [BigInt(i)] as const,
+      })),
+      allowFailure: true,
     });
+    for (let i = 0; i < predictionRows.length; i++) {
+      const res = predictionRows[i];
+      if (res.status !== "success" || !res.result) continue;
+      const row = res.result as readonly [bigint, string, string, string, string, bigint, bigint, number, number, bigint];
+      list.push({
+        id: i,
+        streamer: (row[1] as string).toLowerCase(),
+        title: row[2],
+        option1: row[3],
+        option2: row[4],
+        totalBetOption1: row[5],
+        totalBetOption2: row[6],
+        status: row[7] as PredictionStatus,
+      });
+    }
   }
   return list;
 }

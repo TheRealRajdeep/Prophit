@@ -86,6 +86,13 @@ export const PREDICTION_FACTORY_ABI = [
     type: "function",
   },
   {
+    inputs: [{ internalType: "address", name: "moderator", type: "address" }],
+    name: "addStreamerModerator",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
     inputs: [{ internalType: "uint256", name: "predictionId", type: "uint256" }],
     name: "cancelPrediction",
     outputs: [],

@@ -18,6 +18,7 @@ import {
   PREDICTION_FACTORY_ADDRESS,
   USDC_BASE_SEPOLIA,
   BASE_SEPOLIA_CHAIN_ID,
+  BASE_SEPOLIA_RPC_URL,
   PREDICTION_FACTORY_DEPLOY_BLOCK,
 } from "@/lib/constants";
 import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
@@ -28,7 +29,7 @@ import {
 
 const publicClient = createPublicClient({
   chain: baseSepolia,
-  transport: http(),
+  transport: http(BASE_SEPOLIA_RPC_URL, { batch: true }),
 });
 
 export type Prediction = {
@@ -62,9 +63,36 @@ function revertErrorToMessage(errorName: string | undefined): string {
       return "No bet to claim.";
     case "TransferFailed":
       return "Token transfer failed.";
+    case "Error":
+      return "Transaction failed. If you're a moderator, the streamer must add you on-chain first (Add moderator).";
     default:
       return `Transaction failed: ${errorName}`;
   }
+}
+
+/** Extracts a user-friendly message from any error (viem, wallet, etc.). */
+function toUserFriendlyError(err: unknown): string {
+  const getMsg = (): string => {
+    if (err instanceof BaseError) {
+      const short = (err as { shortMessage?: string; cause?: unknown }).shortMessage;
+      if (short && short !== "Error") return short;
+      const cause = (err as { cause?: Error }).cause;
+      if (cause instanceof Error && cause.message) return cause.message;
+    }
+    if (err instanceof Error) {
+      const msg = err.message?.trim();
+      if (msg && msg !== "Error") return msg;
+    }
+    const str = String(err);
+    if (str && str !== "Error") return str;
+    return "";
+  };
+  const msg = getMsg();
+  if (msg.toLowerCase().includes("not streamer or moderator") || msg.toLowerCase().includes("unauthorized")) {
+    return "Moderators must be added on-chain by the streamer. Ask the streamer to add your wallet address as a moderator.";
+  }
+  if (msg) return msg;
+  return "Transaction failed. Try again or check your wallet connection.";
 }
 
 const STATUS_OPEN = 0;
@@ -137,28 +165,36 @@ export function usePredictions(
       })) as bigint;
       const n = Number(nextId);
       const list: Prediction[] = [];
-      for (let i = 0; i < n; i++) {
-        const row = await publicClient.readContract({
-          address: PREDICTION_FACTORY_ADDRESS,
-          abi: PREDICTION_FACTORY_ABI,
-          functionName: "predictions",
-          args: [BigInt(i)],
-        }) as readonly [bigint, string, string, string, string, bigint, bigint, number, number, bigint];
-        const streamer = row[1].toLowerCase();
-        const target = streamerAddress.toLowerCase();
-        if (streamer !== target) continue;
-        list.push({
-          id: i,
-          streamer: row[1] as Address,
-          title: row[2],
-          option1: row[3],
-          option2: row[4],
-          totalBetOption1: row[5],
-          totalBetOption2: row[6],
-          status: row[7] as PredictionStatus,
-          winningOption: row[8],
-          lockTimestamp: row[9],
+      if (n > 0) {
+        const predictionRows = await publicClient.multicall({
+          contracts: Array.from({ length: n }, (_, i) => ({
+            address: PREDICTION_FACTORY_ADDRESS,
+            abi: PREDICTION_FACTORY_ABI,
+            functionName: "predictions" as const,
+            args: [BigInt(i)] as const,
+          })),
+          allowFailure: true,
         });
+        for (let i = 0; i < predictionRows.length; i++) {
+          const res = predictionRows[i];
+          if (res.status !== "success" || !res.result) continue;
+          const row = res.result as readonly [bigint, string, string, string, string, bigint, bigint, number, number, bigint];
+          const streamer = row[1].toLowerCase();
+          const target = streamerAddress.toLowerCase();
+          if (streamer !== target) continue;
+          list.push({
+            id: i,
+            streamer: row[1] as Address,
+            title: row[2],
+            option1: row[3],
+            option2: row[4],
+            totalBetOption1: row[5],
+            totalBetOption2: row[6],
+            status: row[7] as PredictionStatus,
+            winningOption: row[8],
+            lockTimestamp: row[9],
+          });
+        }
       }
       list.reverse();
       setPredictions(list);
@@ -216,28 +252,32 @@ export function usePredictions(
             throw new Error(msg);
           }
         }
-        throw err;
+        throw new Error(toUserFriendlyError(err));
       }
-      const data = encodeFunctionData({
-        abi: PREDICTION_FACTORY_ABI,
-        functionName: fn,
-        args: writeArgs,
-      });
-      const gas = await publicClient.estimateGas({
-        account,
-        to: PREDICTION_FACTORY_ADDRESS,
-        data,
-      });
-      const hash = await walletClient.writeContract({
-        address: PREDICTION_FACTORY_ADDRESS,
-        abi: PREDICTION_FACTORY_ABI,
-        functionName: fn,
-        args: writeArgs,
-        chain: baseSepolia,
-        account,
-        gas: gas + BigInt(5000), // add buffer for safety
-      });
-      return hash;
+      try {
+        const data = encodeFunctionData({
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: fn,
+          args: writeArgs,
+        });
+        const gas = await publicClient.estimateGas({
+          account,
+          to: PREDICTION_FACTORY_ADDRESS,
+          data,
+        });
+        const hash = await walletClient.writeContract({
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: fn,
+          args: writeArgs,
+          chain: baseSepolia,
+          account,
+          gas: gas + BigInt(5000), // add buffer for safety
+        });
+        return hash;
+      } catch (err) {
+        throw new Error(toUserFriendlyError(err));
+      }
     },
     [getWalletClient]
   );
@@ -373,7 +413,7 @@ export function usePredictions(
               `Your total balance may include funds on other chains—predictions use Base Sepolia only.`
           );
         }
-        throw err;
+        throw new Error(toUserFriendlyError(err));
       }
     },
     [getWalletClient, getWalletClientForBetting, fetchPredictions]
@@ -410,29 +450,59 @@ export function usePredictions(
             throw new Error(msg);
           }
         }
-        throw err;
+        throw new Error(toUserFriendlyError(err));
       }
-      const gas = await publicClient.estimateGas({
-        account: walletClient.account,
-        to: PREDICTION_FACTORY_ADDRESS,
-        data,
-      });
-      const hash = await walletClient.writeContract({
-        address: PREDICTION_FACTORY_ADDRESS,
-        abi: PREDICTION_FACTORY_ABI,
-        functionName: "claimWinnings",
-        args: [BigInt(predictionId)],
-        chain: baseSepolia,
-        account: walletClient.account,
-        gas: gas + BigInt(5000),
-      });
-      if (hash) {
-        await publicClient.waitForTransactionReceipt({ hash });
-        await fetchPredictions();
+      try {
+        const gas = await publicClient.estimateGas({
+          account: walletClient.account,
+          to: PREDICTION_FACTORY_ADDRESS,
+          data,
+        });
+        const hash = await walletClient.writeContract({
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: "claimWinnings",
+          args: [BigInt(predictionId)],
+          chain: baseSepolia,
+          account: walletClient.account,
+          gas: gas + BigInt(5000),
+        });
+        if (hash) {
+          await publicClient.waitForTransactionReceipt({ hash });
+          await fetchPredictions();
+        }
+        return hash;
+      } catch (err) {
+        throw new Error(toUserFriendlyError(err));
       }
-      return hash;
     },
     [getWalletClientForBetting, getWalletClient, fetchPredictions]
+  );
+
+  const addStreamerModerator = useCallback(
+    async (moderatorAddress: Address): Promise<Hash | null> => {
+      const walletClient = getWalletClient ? await getWalletClient() : null;
+      if (!walletClient?.account) {
+        throw new Error("Connect your Privy wallet to add a moderator");
+      }
+      if (walletClient.account.address.toLowerCase() === moderatorAddress.toLowerCase()) {
+        throw new Error("You cannot add yourself as a moderator");
+      }
+      try {
+        const hash = await walletClient.writeContract({
+          address: PREDICTION_FACTORY_ADDRESS,
+          abi: PREDICTION_FACTORY_ABI,
+          functionName: "addStreamerModerator",
+          args: [moderatorAddress],
+          chain: baseSepolia,
+          account: walletClient.account,
+        });
+        return hash;
+      } catch (err) {
+        throw new Error(toUserFriendlyError(err));
+      }
+    },
+    [getWalletClient]
   );
 
   return {
@@ -446,6 +516,7 @@ export function usePredictions(
     cancelPrediction,
     placeBet,
     claimWinnings,
+    addStreamerModerator,
     chainId: BASE_SEPOLIA_CHAIN_ID,
   };
 }

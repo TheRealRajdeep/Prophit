@@ -1,6 +1,13 @@
 import { base, baseSepolia, sepolia } from "viem/chains";
 import type { Chain } from "viem";
 
+/** Base Sepolia RPC URL – PublicNode has better rate limits than sepolia.base.org. Set NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL to override. */
+export const BASE_SEPOLIA_RPC_URL =
+  (typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL
+    : process.env.BASE_SEPOLIA_RPC_URL) ??
+  "https://base-sepolia-rpc.publicnode.com";
+
 /** CDN for network and token icons (Fun.xyz SDK). */
 export const CHAIN_TOKEN_ICON_CDN = "https://sdk-cdn.fun.xyz/images";
 
